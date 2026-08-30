@@ -26,3 +26,12 @@ fp-info-cache
 
 # OS
 .DS_Store
+
+# Cuttle board source files. THIS REPO IS PUBLIC and the servo board repo is
+# not, so the gerbers and the KiCad STEP export stay out of it. Drop them into
+# cad/ref/ locally to re-run cad/tools/extract_*.py; the derived JSON that the
+# jig actually builds from is committed.
+cad/ref/
+
+# Regenerable: the assembly STEP embeds the whole board keep-out solid.
+cad/out/assembly_closed.step

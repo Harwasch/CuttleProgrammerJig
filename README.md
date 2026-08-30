@@ -1,52 +1,104 @@
-# <project name>
+# Cuttle CANServo_Driver — SWD pogo programming jig
 
-A hardware project built with the [MakeHardware](https://github.com/Harwasch/MakeHardware)
-workflow. Replace this paragraph with one sentence about what the thing is.
+A 3D-printed spring-nest fixture for flashing the Cuttle CAN servo driver
+board over SWD, using P50-B1 pogo probes against the seven bare-copper test
+points on the underside of the board. No PCB required — five printed parts,
+four springs, seven probes and a GH-201 toggle clamp.
 
-<!-- PLAN:BEGIN -->
-<!-- PLAN:END -->
+![assembly](cad/out/r_assembly.png)
+
+## How it works
+
+The board never has to be pushed onto exposed probe tips by hand:
+
+1. A **nest** floats 3 mm above the base on four springs. The probe tips sit
+   **1.8 mm below** the board when the clamp is open, so the board drops in
+   freely and locates on two pins through its own 2.2 mm holes.
+2. Closing the clamp pushes a **hold-down cover** down onto five pads that
+   land on bare board, driving the nest onto a hard stop.
+3. At the stop the nest has travelled exactly 3 mm, which compresses each
+   probe **1.20 mm** — 45 % of the P50's 2.65 mm stroke.
+
+![stack-up](cad/out/stackup.png)
+
+## The board
+
+Everything below was extracted from the V0.4 gerbers and the KiCad STEP
+export, not typed in by hand — see [`cad/tools/`](cad/tools). The board is a
+6-layer rigid-flex, 104.6 × 20.1 mm, 1.627 mm thick, in three rigid sections
+joined by two 6 mm flex necks. The jig supports all three flat so the flex is
+never bent during programming.
+
+The seven test points are **bare copper discs with solder-mask openings**, not
+pad footprints — Ø1.2 mm, all on the bottom layer (L6):
+
+| Net | X | Y | note |
+|---|---:|---:|---|
+| NRST | −32.25 | +1.70 | 1.42 mm from the board edge |
+| GND | −28.25 | −6.30 | |
+| SWO | −26.25 | −1.70 | |
+| VDD_3V3 | −23.45 | +5.40 | |
+| VDD_3V3 | −23.15 | −8.80 | 1.12 mm from the board edge |
+| SWDIO | −22.25 | +1.30 | |
+| SWCLK | −17.15 | +1.90 | |
+
+Coordinates are in the jig frame: origin at the centroid of the four Ø2.2 mm
+holes on the main rigid section, +Y up. Those four holes are the motor /
+connector pattern, not board-mounting holes; the jig borrows two of them
+(diagonal, 29.6 mm apart) purely to locate the board.
+
+Three of the seven probes sit 0.5–1.4 mm from the board outline, so the nest
+cannot use a plain inset rim. Instead it is relieved **only** where it must
+be — under every bottom-side part and around each probe — which keeps 76 % of
+the board footprint supported.
+
+![nest plan](cad/out/nest_plan.png)
+
+## Parts
+
+| Part | Print | Notes |
+|---|---|---|
+| `base_plate` | flat, posts up | The precision part: 7 probe bores, 4 guide posts, spring pockets |
+| `nest` | flat | Board recess, relief window, two locator pins |
+| `cover` | pads up | Hold-down; presses only on bare board |
+| `stand` | as modelled | Lifts the plate 16 mm for wiring; carries the clamp pedestal |
+| `clamp_riser` | as modelled | The one part you re-print to suit your clamp |
+
+STEP and STL for all five are in [`cad/out/`](cad/out).
 
 ## Getting started
 
-This repo was created from the MakeHardware project template, so
-`.claude/settings.json` is already correct. In the **first** session, run:
+Build instructions, bill of materials, the drilling step and the wiring table
+are in **[docs/BUILD.md](docs/BUILD.md)**.
 
-```
-/hw-new-project
-```
-
-That scaffolds `plan.yaml`, `requirements/`, `hw/`, `cad/`, `concepts/`,
-`sim/`, `docs/`, `strictdoc.toml` and a project `CLAUDE.md` from the plugin's
-current templates, then runs `hw-doctor` and `imagegen --list` so you know what
-the toolchain can actually do before you plan around it.
-
-Then start the vision interview:
-
-```
-Use hw-vision. I want to build <one sentence>.
-```
-
-## The commands you will use
+To regenerate everything after changing a dimension:
 
 ```bash
-hw-doctor                 # what the toolchain can actually do right now
-/hw-status                # plan progress, what is ready to start, requirements coverage
-plan-render               # refresh docs/plan.svg and the block above
-block-diagram             # refresh the architecture diagram and power budget
-block-diagram --check     # architecture gate; exit 1 on an over-budget rail
-req-trace --gate          # traceability gate; exit 1 while gaps remain
+cd cad
+python3 jig.py        # writes STEP + STL into cad/out/
+python3 verify.py     # 40 interference and stack-up checks
 ```
 
-## Before you start: the environment
+`verify.py` checks the parts against a conservative solid built from the real
+component heights. `python3 verify.py --full` runs the same checks against
+all 1037 solids of the KiCad STEP export (slower, exact).
 
-The plugin's skills are useless without the toolchain behind them. This repo
-needs a Claude Code cloud environment built from
-[MakeHardware's `env/`](https://github.com/Harwasch/MakeHardware/tree/HEAD/env) —
-network access **Full**, the environment variables file, and the setup script.
+## Board source files
 
-The setup script is not optional. `.claude/settings.json` declares the plugin
-but does not install it: in a cloud session a repo-declared marketplace is
-ignored for an untrusted folder, so the setup script installs the plugin at
-user scope. Without it you get a repo with no skills in it.
+`cad/ref/` holds the inputs the extractors read — the V0.4 gerbers and the
+KiCad STEP export — and is **git-ignored on purpose**: this repository is
+public and the servo board repository is not. Copy them in locally before
+re-running the extractors. The derived `board_geometry.json` and
+`board_parts.json` that `jig.py` actually builds from are committed.
 
-See [docs/01-environment.md](https://github.com/Harwasch/MakeHardware/blob/HEAD/docs/01-environment.md).
+## Retargeting to a new board revision
+
+```bash
+cd cad/tools
+python3 extract_board.py   # outline, cutouts, test points  <- gerbers
+python3 extract_parts.py   # component keep-outs            <- STEP
+cd .. && python3 jig.py && python3 verify.py
+```
+
+Nothing in `jig.py` hard-codes board geometry; it all comes from
+`board_geometry.json` and `board_parts.json`.
