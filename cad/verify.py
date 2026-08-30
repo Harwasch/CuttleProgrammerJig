@@ -132,6 +132,33 @@ def main():
     check("clamp mounting face is below the cover top",
           rt <= ct, f"riser top {rt:.2f} mm, cover top when open {ct:.2f} mm")
 
+    # ------------------------------------------------------ probe hardware --
+    print("\nprobe hardware fit")
+    bore_depth = P.RECEPT_HEAD_L + P.PIN_BORE_L + (P.Z_PIN_TOP - P.PLATE_Z_BOTTOM
+                                                  - P.RECEPT_HEAD_L - P.PIN_BORE_L)
+    below = P.RECEPT_LEN - bore_depth
+    check("sleeve tail reaches the wiring space", 3.0 <= below <= 12.0,
+          f"{below:.2f} mm of sleeve below the plate, in "
+          f"{P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm of clearance")
+    check("sleeve tail clears the bench", below < P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM,
+          f"{below:.2f} mm vs {P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm")
+    drilled = 0.90
+    check("drilled bore accepts the sleeve body",
+          P.RECEPT_BODY_D < drilled < P.RECEPT_HEAD_D,
+          f"body {P.RECEPT_BODY_D} < bore {drilled} < head {P.RECEPT_HEAD_D} mm")
+    check("printed pilot is undersize so the drill cleans it up",
+          P.PIN_BORE_D < drilled, f"pilot {P.PIN_BORE_D} mm, drill {drilled} mm")
+    check("head counterbore clears the sleeve head",
+          P.PIN_HEAD_BORE_D > P.RECEPT_HEAD_D,
+          f"{P.PIN_HEAD_BORE_D} mm vs {P.RECEPT_HEAD_D} mm head")
+    check("cover pads stand off further than the tallest top-side part",
+          P.COVER_PAD_H > P.PART_H_TOP_MAIN,
+          f"{P.COVER_PAD_H} mm standoff vs {P.PART_H_TOP_MAIN} mm part")
+    rb = riser.bounding_box()
+    check("riser deck is big enough for the clamp footprint",
+          rb.size.X >= P.CLAMP_BASE_W and rb.size.Y >= P.CLAMP_SLOT_DY + 12,
+          f"deck {rb.size.X:.0f} x {rb.size.Y:.0f} mm, clamp body {P.CLAMP_BASE_W:.0f} mm wide")
+
     # --------------------------------------------------------------- force --
     print("\nforce budget")
     n = len(G.TEST_POINTS)

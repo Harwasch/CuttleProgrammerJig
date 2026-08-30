@@ -79,9 +79,14 @@ python3 jig.py        # writes STEP + STL into cad/out/
 python3 verify.py     # 40 interference and stack-up checks
 ```
 
-`verify.py` checks the parts against a conservative solid built from the real
-component heights. `python3 verify.py --full` runs the same checks against
-all 1037 solids of the KiCad STEP export (slower, exact).
+`verify.py` checks the parts against a keep-out solid built from the real
+component heights. That solid uses each component's bounding box, so it is
+strictly larger than the parts themselves — a clean result is a proof of
+clearance, not a sample of it. `extract_parts.py` refuses to emit a model that
+would leave any board-spanning solid unaccounted for, which is what makes the
+conservative claim hold. `python3 verify.py --full` re-runs the same checks
+against all 1037 solids of the STEP export if you want the exact numbers;
+it takes far longer and cannot find anything the fast path misses.
 
 ## Board source files
 

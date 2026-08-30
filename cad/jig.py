@@ -2,16 +2,16 @@
 
 Five printed parts:
   base_plate  precision part -- 7 probe bores, 4 guide posts, spring pockets
-  stand       open frame that lifts the plate for wiring, carries the clamp rail
+  stand       open frame that lifts the plate for wiring, carries the clamp pedestal
   nest        floating board carrier, rides the posts on springs
   cover       hold-down that presses only on bare board, guided by two posts
-  clamp_riser adjustable mount for the GH-201 toggle clamp
+  clamp_riser spacer block carrying the GH-201 toggle clamp
 
 Run:  python3 jig.py            -> writes STEP + STL into cad/out/
 """
 import os
 from build123d import *
-from shapely.geometry import Point, box
+from shapely.geometry import Point
 from shapely.ops import unary_union
 
 import params as P

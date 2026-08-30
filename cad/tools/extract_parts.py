@@ -27,7 +27,7 @@ def main():
     zlo, zhi = slab.min.Z, slab.max.Z
     print(f"  board slab z = {zlo:.4f} .. {zhi:.4f} ({zhi - zlo:.4f} mm)")
 
-    top, bottom = [], []
+    top, bottom, spanning = [], [], []
     for b, _ in boxes:
         rec = [round(b.min.X - OX, 3), round(b.max.X - OX, 3),
                round(b.min.Y - OY, 3), round(b.max.Y - OY, 3)]
@@ -39,6 +39,22 @@ def main():
             h = b.max.Z - zhi
             if h > FILM_T:
                 top.append(rec + [round(h, 3)])
+        else:
+            spanning.append(b)
+
+    # A solid that straddles the board plane belongs to neither list, so it
+    # would silently vanish from the keep-out model. Vias and pad plating are
+    # fine (they sit within FILM_T of the surface); a through-hole lead is not.
+    missed = [b for b in spanning
+              if zlo - b.min.Z > FILM_T or b.max.Z - zhi > FILM_T]
+    if missed:
+        raise SystemExit(
+            f"ERROR: {len(missed)} board-spanning solids protrude more than "
+            f"{FILM_T} mm past a board face and are in neither keep-out list. "
+            "The jig's clearance model would be wrong. Extend the "
+            "classification in this script before rebuilding.")
+    print(f"  {len(spanning)} board-spanning solids (vias/plating), all within "
+          f"{FILM_T} mm of a face -- ok")
 
     data = {
         "note": "[xmin, xmax, ymin, ymax, height] per solid, in the JIG frame, mm. "

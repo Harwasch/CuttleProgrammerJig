@@ -97,7 +97,6 @@ WIRE_SLOT_W          =  20.0
 # ----------------------------------------------------------------- cover ----
 COVER_T              =   4.0   # hold-down cover thickness
 COVER_POSTS          = [(-38.0, 8.5), (-38.0, -8.5)]     # cover rides these
-COVER_PAD_CLEAR      =   0.40  # relief around top-side parts
 COVER_MARGIN         =   4.0
 COVER_TAB_L          =   9.0   # lift-off grip tab
 COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip, at the pad centroid
@@ -107,7 +106,6 @@ COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip, at the pad cent
 # The riser is a separate part on a slotted rail so it can be tuned to the
 # clamp you actually have without reprinting the base.
 RAIL_SLOT_D          =   4.4   # M4 clearance
-RAIL_SLOT_LEN        =  16.0
 # The clamp sits on a pedestal that is part of the stand, with a plain spacer
 # block on top. That block is the ONE part tuned to the clamp you actually
 # have: change RISER_TOP_Z and reprint it (a 20 minute print). Nothing else in
@@ -119,7 +117,7 @@ RISER_Y              = (-50.0, -21.0)   # 1 mm clear of the base plate edge
 RISER_TOP_Z          =  12.0            # nominal clamp mounting height
 RISER_BOLT_XY        = [(-36.0, -46.0), (-14.0, -46.0),
                         (-36.0, -25.0), (-14.0, -25.0)]
-CLAMP_BASE_W         =  25.0
+CLAMP_BASE_W         =  25.0   # GH-201 body, checked against the riser deck
 CLAMP_BASE_L         =  75.0
 CLAMP_SLOT_L         =   6.0
 CLAMP_SLOT_W         =   4.0
@@ -127,4 +125,3 @@ CLAMP_SLOT_DX        =  15.9   # <-- measure yours; drawing shows 15.9 x 11.1
 CLAMP_SLOT_DY        =  11.1
 
 # ------------------------------------------------------------ printing -----
-FIT                  =   0.20  # general sliding clearance
