@@ -22,7 +22,7 @@ SS = 2                      # supersampling factor
 LIGHT = np.array([0.45, -0.75, 0.62])
 
 COLOR = dict(base_plate="#4d7fc4", nest="#dfa03a", cover="#c0574f",
-             stand="#9aa0a6", clamp_riser="#7d5aa6", pcba="#12602c")
+             stand="#9aa0a6", pcba="#12602c", probes_hw="#d8b23a")
 
 
 def load_stl(path):
@@ -54,8 +54,11 @@ def rasterise(tris, cols, az, el, W, H, pad=6.0, focus=None):
     keep = nrm[:, 1] < 0                       # facing the camera (-Y)
     v, cols, nrm = v[keep], cols[keep], nrm[keep]
 
+    # key light plus a camera-mounted fill, so faces turned away from the key
+    # (the plate underside, for instance) still read instead of going black
     L = LIGHT / np.linalg.norm(LIGHT)
-    shade = np.clip(0.34 + 0.66 * np.clip(nrm @ L, 0, 1), 0, 1)
+    shade = np.clip(0.20 + 0.55 * np.clip(nrm @ L, 0, 1)
+                    + 0.45 * np.clip(-nrm[:, 1], 0, 1), 0, 1)
     rgb_tri = cols * shade[:, None]
 
     xs, zs = v[:, :, 0], v[:, :, 2]
@@ -171,12 +174,12 @@ def shot(parts, path, title, az=35, el=22, w=1400, h=900, focus=None, labels=Non
 
 
 COVER_Z = P.NEST_T + P.PCB_T
-JIG = [("stand", 0), ("clamp_riser", 0), ("base_plate", 0)]
+JIG = [("stand", 0), ("base_plate", 0), ("probes_hw", 0)]
 CLOSED = JIG + [("nest", 0), ("cover", COVER_Z)]
 CLOSED_PCB = JIG + [("nest", 0), ("pcba", 0), ("cover", COVER_Z)]
 OPEN_PCB = JIG + [("nest", P.TRAVEL), ("pcba", P.TRAVEL),
                   ("cover", COVER_Z + P.TRAVEL)]
-EXPLODE = [("stand", -18), ("clamp_riser", -18), ("base_plate", 0),
+EXPLODE = [("stand", -20), ("base_plate", 0), ("probes_hw", 0),
            ("nest", 16), ("pcba", 30), ("cover", COVER_Z + 42)]
 
 VIEWS = {
@@ -189,7 +192,18 @@ VIEWS = {
     "top":             (CLOSED_PCB, 0, 89, "plan view"),
     "jig_only":        (JIG + [("nest", 0)], 40, 40,
                         "jig with the cover off - nest window and probe platform"),
-    "probes":          ([("base_plate", 0)], 18, 62,
+    "underside":       ([("stand", 0), ("base_plate", 0), ("probes_hw", 0)],
+                        -140, -34,
+                        "underside - sleeve tails in the open wiring space, "
+                        "loom exit with its tie post"),
+    "wiring":          ([("base_plate", 0), ("probes_hw", 0)], -120, -40,
+                        "solder side - seven R50 sleeve tails, 5.7 mm proud, "
+                        "tightest pair 4.3 mm apart",
+                        (-24.7, -1.5, -11.0, 16.0)),
+    "tower":           ([("stand", 0)], 128, 24,
+                        "stand - the clamp tower is the pedestal walls carried up, "
+                        "not a bracket"),
+    "probes":          ([("base_plate", 0), ("probes_hw", 0)], 18, 62,
                         "base plate close-up - all seven probe islands, "
                         "cut back where a bottom-side part would foul them",
                         (-24.7, -1.5, 2.0, 13.5)),
@@ -205,6 +219,8 @@ VIEWS = {
 import json
 _B = json.load(open(os.path.join(HERE, "..", "board_geometry.json")))
 LABELS = {
+    "wiring": [((t["x"], t["y"], P.Z_PIN_TOP - P.RECEPT_LEN), t["net"],
+                46 if t["y"] > 0 else -46) for t in _B["test_points"]],
     "probes": [((t["x"], t["y"], P.Z_PIN_TOP), t["net"], -46 if t["y"] > 0 else 46)
                for t in _B["test_points"]],
     "exploded": [((-58, 0, -18), "stand", -40), ((-24, -36, -6), "clamp riser", 40),

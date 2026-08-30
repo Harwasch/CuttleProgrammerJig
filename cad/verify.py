@@ -3,7 +3,7 @@
 Every check is a genuine interference or dimension test.
 Run:  python3 verify.py
 """
-import os, sys
+import os, sys, math
 from build123d import *
 from shapely.geometry import Point
 import params as P
@@ -114,23 +114,48 @@ def main():
               clr >= P.COVER_PAD_R and edge >= P.COVER_PAD_R,
               f"{clr:.2f} mm to nearest part, {edge:.2f} mm to board edge")
 
-    # ------------------------------------------------- stand + clamp riser --
-    print("\nstand and clamp riser")
-    stand, riser = jig.build_stand(), jig.build_clamp_riser()
+    # ------------------------------------------------------ stand and tower --
+    print("\nstand")
+    stand = jig.build_stand()
     cov_open = Pos(0, 0, seat + P.TRAVEL + board_t) * cover
     nest_open = Pos(0, 0, P.TRAVEL) * nest
     for nm, a, b2 in [("stand vs base plate", stand, base),
-                      ("riser vs stand", riser, stand),
-                      ("riser vs base plate", riser, base),
-                      ("riser vs nest, clamp open", riser, nest_open),
-                      ("riser vs cover, clamp open", riser, cov_open),
-                      ("riser vs PCBA", riser, board)]:
+                      ("clamp tower vs nest, clamp open", stand, nest_open),
+                      ("clamp tower vs cover, clamp open", stand, cov_open),
+                      ("clamp tower vs PCBA", stand, board)]:
         v = vol(a.intersect(b2))
         check(nm, v < 0.02, f"{v:.4f} mm3 overlap")
-    rt = riser.bounding_box().max.Z
     ct = seat + P.TRAVEL + board_t + P.COVER_PAD_H + P.COVER_T
-    check("clamp mounting face is below the cover top",
-          rt <= ct, f"riser top {rt:.2f} mm, cover top when open {ct:.2f} mm")
+    check("clamp deck sits below the cover top",
+          P.TOWER_TOP_Z <= ct,
+          f"deck {P.TOWER_TOP_Z:.2f} mm, cover top when open {ct:.2f} mm")
+    check("stand is one piece", len(stand.solids()) == 1,
+          f"{len(stand.solids())} solid(s)")
+
+    # ------------------------------------------------------ wiring access --
+    print("\nwiring space under the base plate")
+    bore = P.Z_PIN_TOP - P.PLATE_Z_BOTTOM
+    tail = P.RECEPT_LEN - bore
+    headroom = (P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM) - tail
+    check("sleeve tail projects far enough to solder", tail >= 4.0,
+          f"{tail:.2f} mm of sleeve below the plate")
+    check("room under the tails for the joint and a wire bend", headroom >= 8.0,
+          f"{headroom:.2f} mm to the bench")
+    pitch = min(math.hypot(a["x"] - b["x"], a["y"] - b["y"])
+                for a, b in __import__("itertools").combinations(G.TEST_POINTS, 2))
+    check("sleeve pitch workable with a fine iron tip", pitch >= 3.0,
+          f"tightest pair {pitch:.2f} mm apart")
+    # nothing may block the space directly under a sleeve
+    for tp in G.TEST_POINTS:
+        col = Pos(tp["x"], tp["y"], P.STAND_Z_BOTTOM) * extrude(
+            Circle(2.0), amount=P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM - 0.1)
+        v = vol(stand.intersect(col))
+        check(f"{tp['net']:8s} solder access is clear", v < 0.02, f"{v:.4f} mm3")
+    area = P.WIRE_SLOT_W * (P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0])
+    need = len(G.TEST_POINTS) * 1.4 ** 2
+    check("loom exit is big enough", area >= 4 * need,
+          f"{P.WIRE_SLOT_W:.0f} x {P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]:.0f} mm "
+          f"= {area:.0f} mm2 for 7 wires")
 
     # ------------------------------------------------------ probe hardware --
     print("\nprobe hardware fit")
@@ -154,10 +179,11 @@ def main():
     check("cover pads stand off further than the tallest top-side part",
           P.COVER_PAD_H > P.PART_H_TOP_MAIN,
           f"{P.COVER_PAD_H} mm standoff vs {P.PART_H_TOP_MAIN} mm part")
-    rb = riser.bounding_box()
-    check("riser deck is big enough for the clamp footprint",
-          rb.size.X >= P.CLAMP_BASE_W and rb.size.Y >= P.CLAMP_SLOT_DY + 12,
-          f"deck {rb.size.X:.0f} x {rb.size.Y:.0f} mm, clamp body {P.CLAMP_BASE_W:.0f} mm wide")
+    dw = P.PEDESTAL_X[1] - P.PEDESTAL_X[0]
+    dd = P.PEDESTAL_Y[1] - P.PEDESTAL_Y[0]
+    check("clamp deck is big enough for the clamp footprint",
+          dw >= P.CLAMP_BASE_W and dd >= P.CLAMP_SLOT_DY + 12,
+          f"deck {dw:.0f} x {dd:.0f} mm, clamp body {P.CLAMP_BASE_W:.0f} mm wide")
 
     # --------------------------------------------------------------- force --
     print("\nforce budget")

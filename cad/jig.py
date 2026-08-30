@@ -1,11 +1,10 @@
 """Cuttle CANServo_Driver pogo programming jig.
 
-Five printed parts:
+Four printed parts:
   base_plate  precision part -- 7 probe bores, 4 guide posts, spring pockets
-  stand       open frame that lifts the plate for wiring, carries the clamp pedestal
+  stand       one piece: open frame under the plate plus the clamp tower
   nest        floating board carrier, rides the posts on springs
   cover       hold-down that presses only on bare board, guided by two posts
-  clamp_riser spacer block carrying the GH-201 toggle clamp
 
 Run:  python3 jig.py            -> writes STEP + STL into cad/out/
 """
@@ -124,58 +123,83 @@ def build_cover():
 
 # ------------------------------------------------------------------- stand --
 def build_stand():
-    """Open frame that lifts the base plate clear of the bench for wiring and
-    carries the vertical face the clamp riser bolts to."""
+    """One monolithic part. The open frame under the base plate and the clamp
+    tower are the same shell: the tower is the pedestal walls carried straight
+    up to a mounting deck, not a bracket bolted to the side.
+
+    Prints standing on its own base with no overhangs -- every wall is
+    vertical and the only horizontal roof is the tower deck, which is closed
+    by the four clamp slots' own bridging.
+    """
     z0, z1 = P.STAND_Z_BOTTOM, P.PLATE_Z_BOTTOM
-    h = z1 - z0
-    part = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0), amount=h)
-    inner = (P.PLATE_X[0] + P.STAND_WALL, P.PLATE_X[1] - P.STAND_WALL)
-    innery = (P.PLATE_Y[0] + P.STAND_WALL, P.PLATE_Y[1] - P.STAND_WALL)
-    part -= extrude(rrect(inner, innery, 2.0, z0 - 0.1), amount=h + 0.2)
+    W = P.STAND_WALL
 
-    # wire exit, both long sides
-    for sy in (1, -1):
-        part -= Pos(0, sy * (P.PLATE_Y[1] - P.STAND_WALL / 2), z0 + h - P.WIRE_SLOT_W / 2) * \
-                Box(P.WIRE_SLOT_W, P.STAND_WALL * 2, P.WIRE_SLOT_W)
+    # frame under the base plate, and the tower shell, as one outer solid
+    frame = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0), amount=z1 - z0)
+    tower = extrude(rrect(P.PEDESTAL_X, P.PEDESTAL_Y, P.PLATE_FILLET, z0),
+                    amount=P.TOWER_TOP_Z - z0)
+    part = frame + tower
 
-    # screw bosses for the base plate
+    # hollow both, leaving the tower deck
+    part -= extrude(rrect((P.PLATE_X[0] + W, P.PLATE_X[1] - W),
+                          (P.PLATE_Y[0] + W, P.PLATE_Y[1] - W), 2.0, z0 - 0.1),
+                    amount=(z1 - z0) + 0.2)
+    # The tower stays solid (slicer infill) up to a shallow nut channel under
+    # the deck. A full-height cavity would print fine but would leave you
+    # fishing for an M4 nut 40 mm down a hole.
+    part -= extrude(rrect((P.PEDESTAL_X[0] + W, P.PEDESTAL_X[1] - W),
+                          (P.PEDESTAL_Y[0] + W, P.PEDESTAL_Y[1]), 2.0, z0 - 0.1),
+                    amount=P.PLATE_Z_BOTTOM - z0 + 0.1)
+
+    # screw bosses carrying the base plate
     for x, y in P.MOUNT_SCREW_XY:
-        part += Pos(x, y, z1 - 8.0) * extrude(Circle(4.0), amount=8.0)
-        part -= Pos(x, y, z1 - 8.2) * extrude(Circle(1.4), amount=8.4)
+        part += Pos(x, y, z1 - 10.0) * extrude(Circle(4.5), amount=10.0)
+        part -= Pos(x, y, z1 - 10.2) * extrude(Circle(1.4), amount=10.4)
 
-    # pedestal the clamp riser bolts onto, level with the rest of the stand top
-    ped = extrude(rrect(P.PEDESTAL_X, P.PEDESTAL_Y, 4.0, z0), amount=h)
-    part += ped
-    pin = (P.PEDESTAL_X[0] + P.STAND_WALL, P.PEDESTAL_X[1] - P.STAND_WALL)
-    piny = (P.PEDESTAL_Y[0] + P.STAND_WALL, P.PEDESTAL_Y[1])
-    part -= extrude(rrect(pin, piny, 2.0, z0 - 0.1), amount=h - 4.0 + 0.1)
-    for x, y in P.RISER_BOLT_XY:                      # M4 heat-set / self-tap
-        part += Pos(x, y, z1 - 9.0) * extrude(Circle(4.5), amount=9.0)
-        part -= Pos(x, y, z1 - 9.2) * extrude(Circle(1.9), amount=9.4)
-    return part
+    # Loom exit on the far side from the clamp. A vertical divider splits the
+    # opening in two: it gives the zip tie something to pull against, and it
+    # halves the span the slot's top edge has to bridge when printing.
+    ey = P.PLATE_Y[1]
+    zc = (P.WIRE_EXIT_Z[0] + P.WIRE_EXIT_Z[1]) / 2
+    zh = P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]
+    part -= Pos(0, ey, zc) * Box(P.WIRE_SLOT_W, W * 3, zh)
+    part += Pos(0, ey - W / 2, zc) * Box(P.TIE_BAR_W, W, zh)
 
-
-# ------------------------------------------------------------ clamp riser --
-def build_clamp_riser():
-    """Spacer block carrying the GH-201. Re-print just this if your clamp's
-    reach or spindle height differs; nothing else in the jig changes."""
-    z0, zt = P.PLATE_Z_BOTTOM, P.RISER_TOP_Z
-    part = extrude(rrect(P.RISER_X, P.RISER_Y, 3.0, z0), amount=zt - z0)
-    # hollow it out, keeping a 4 mm top deck and 4 mm walls
-    inx = (P.RISER_X[0] + 4, P.RISER_X[1] - 4)
-    iny = (P.RISER_Y[0] + 4, P.RISER_Y[1] - 4)
-    part -= extrude(rrect(inx, iny, 2.0, z0 - 0.1), amount=(zt - z0) - 4.0 + 0.1)
-    for x, y in P.RISER_BOLT_XY:                    # down into the stand pedestal
-        part += Pos(x, y, z0) * extrude(Circle(4.5), amount=zt - z0 - 4.0)
-        part -= Pos(x, y, z0 - 0.1) * extrude(Circle(P.RAIL_SLOT_D / 2), amount=zt - z0 + 0.2)
-    cx = (P.RISER_X[0] + P.RISER_X[1]) / 2
-    cy = (P.RISER_Y[0] + P.RISER_Y[1]) / 2
-    for sx in (-1, 1):                              # GH-201 mounting slots
+    # Clamp mounting: slots through the deck, longer than the GH-201's own so
+    # the clamp can slide toward or away from the board, over a captive-nut
+    # channel. The channel is open at the back face, so an M4 nut slides in
+    # from outside and the channel walls stop it turning.
+    cx = (P.PEDESTAL_X[0] + P.PEDESTAL_X[1]) / 2
+    cy = (P.PEDESTAL_Y[0] + P.PEDESTAL_Y[1]) / 2
+    deck = P.TOWER_TOP_Z - P.TOWER_DECK_T
+    for sx in (-1, 1):
+        x = cx + sx * P.CLAMP_SLOT_DX / 2
         for sy in (-1, 1):
-            part -= Pos(cx + sx * P.CLAMP_SLOT_DX / 2, cy + sy * P.CLAMP_SLOT_DY / 2,
-                        zt - 4.5) * extrude(
-                SlotOverall(P.CLAMP_SLOT_L, P.CLAMP_SLOT_W), amount=5.0)
+            part -= Pos(x, cy + sy * P.CLAMP_SLOT_DY / 2, deck - 0.1) * extrude(
+                SlotOverall(P.CLAMP_SLOT_W + P.CLAMP_SLOT_TRAVEL, P.RAIL_SLOT_D,
+                            rotation=90), amount=P.TOWER_DECK_T + 0.2)
+        y0 = P.PEDESTAL_Y[0] - 1.0
+        y1 = cy + P.CLAMP_SLOT_DY / 2 + (P.CLAMP_SLOT_W + P.CLAMP_SLOT_TRAVEL) / 2 + 2.0
+        part -= Pos(x, (y0 + y1) / 2, deck - P.NUT_CHANNEL_H / 2) * \
+            Box(P.NUT_CHANNEL_W, y1 - y0, P.NUT_CHANNEL_H)
     return part
+
+
+# ------------------------------------------- hardware, for renders only -----
+def build_probes():
+    """The seven R50 sleeves and the P50 tips standing in them. Not a printed
+    part -- it exists so the renders show where the solder joints actually are."""
+    out = None
+    for tp in G.TEST_POINTS:
+        p = Pos(tp["x"], tp["y"])
+        sleeve = p * Pos(0, 0, P.Z_PIN_TOP - P.RECEPT_LEN) * extrude(
+            Circle(P.RECEPT_BODY_D / 2), amount=P.RECEPT_LEN)
+        shaft = p * Pos(0, 0, P.Z_PIN_TOP) * extrude(
+            Circle(0.25), amount=P.PIN_PROTRUSION - 0.55)
+        tip = p * Pos(0, 0, P.Z_PIN_TOP + P.PIN_PROTRUSION - 0.55) * extrude(
+            Circle(0.25), amount=0.55, taper=45)
+        out = sleeve + shaft + tip if out is None else out + sleeve + shaft + tip
+    return out
 
 
 PARTS_TO_BUILD = {
@@ -183,7 +207,6 @@ PARTS_TO_BUILD = {
     "nest": build_nest,
     "cover": build_cover,
     "stand": build_stand,
-    "clamp_riser": build_clamp_riser,
 }
 
 
@@ -194,7 +217,6 @@ def assembly(open_position=False):
     a = {
         "base_plate": build_base_plate(),
         "stand": build_stand(),
-        "clamp_riser": build_clamp_riser(),
         "nest": Pos(0, 0, dz) * build_nest(),
         "cover": Pos(0, 0, seat + P.PCB_T) * build_cover(),
         "pcb": G.pcba_solid(seat),
@@ -211,6 +233,9 @@ if __name__ == "__main__":
               f"{bb.size.X:7.2f} x {bb.size.Y:6.2f} x {bb.size.Z:6.2f}")
         export_step(s, os.path.join(OUT, f"{name}.step"))
         export_stl(s, os.path.join(OUT, f"{name}.stl"))
+    export_step(build_probes(), os.path.join(OUT, "probes_hw.step"))
+    export_stl(build_probes(), os.path.join(OUT, "probes_hw.stl"))
+    print("probes_hw     (render aid, not a printed part)")
     asm = assembly()
     comp = Compound(children=[Part(s.wrapped, label=k) for k, s in asm.items()])
     export_step(comp, os.path.join(OUT, "assembly_closed.step"))

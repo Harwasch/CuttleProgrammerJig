@@ -8,13 +8,12 @@
 | 7 | R50-2S receptacle | Ø0.86 mm body, 17.5 mm, solder slot |
 | 4 | Compression spring, 0.6 × 7 mm, **15 mm free length** | from the assortment kit |
 | 1 | GH-201 horizontal toggle clamp | 75 × 25 × 17 mm, 27 kg |
-| 4 | M4 × 16 screw + nut | clamp riser to stand |
-| 4 | M4 × 12 screw | toggle clamp to riser |
+| 4 | M4 × 16 screw + M4 nut | toggle clamp to the tower, nuts in the slide channels |
 | 4 | M3 × 12 screw | base plate to stand |
-| 2 | M3 × 10 screw | optional, cover retention |
-| — | 7 × stranded wire, 26 AWG | probe tails to the ST-Link |
+| 1 | small zip tie | loom strain relief at the exit |
+| — | 7 × silicone wire, **30 AWG** | probe tails; see Wiring |
 
-Print all five parts in **PETG or ABS**, not PLA — the jig sits under
+Print all four parts in **PETG or ABS**, not PLA — the jig sits under
 continuous spring load and PLA creeps.
 
 ## Print settings
@@ -28,7 +27,7 @@ continuous spring load and PLA creeps.
 | Supports | none needed | every part prints without overhangs as oriented |
 
 Orientation: `base_plate` bore-side up (posts up, flat underside on the bed),
-`nest` lip up, `cover` pads up, `stand` and `clamp_riser` as modelled.
+`nest` lip up, `cover` pads up, `stand` on its own base as modelled.
 
 ## The one machining step
 
@@ -45,14 +44,18 @@ push in with firm thumb pressure and not rotate freely.
 ## Assembly
 
 1. Drill the seven probe bores to Ø0.90 mm.
-2. Press an **R50-2S sleeve** into each bore from the top until its head
-   bottoms in the counterbore. The sleeve's solder tail projects about 5.7 mm
-   below the plate into the open wiring space.
-3. Solder a wire to each sleeve tail. Work from the middle outwards.
-   Label them as you go — see the wiring table below.
-4. Screw the `stand` to the `base_plate` with four M3.
-5. Bolt the `clamp_riser` to the stand pedestal with four M4, then the
-   GH-201 to the riser with four M4 through its 6 × 4 mm slots.
+2. Press an **R50-2S sleeve** into each bore from the top, tail first, until it
+   stops. The tail then projects 5.7 mm below the plate into open air.
+   A Ø0.90 bore is a slip fit on the Ø0.86 body, so the bore locates the
+   sleeve but does not retain it — see Wiring for how to lock it.
+3. With the plate still off the stand and turned upside down, solder a wire to
+   each sleeve tail, then wick a drop of thin CA into each sleeve/bore joint
+   from below to lock it. Label the wires as you go.
+4. Screw the `base_plate` down onto the `stand` with four M3.
+5. Slide two M4 nuts into each channel in the tower's back face, then bolt the
+   GH-201 down through the deck slots. The slots give 8 mm of fore-and-aft
+   travel on top of the clamp's own, so set the reach here and the height on
+   the spindle.
 6. Drop a spring into each of the four base counterbores, over the guide
    posts, then lower the `nest` onto the posts.
 7. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
@@ -61,6 +64,18 @@ push in with firm thumb pressure and not rotate freely.
    cover and drives the nest fully onto the hard stop — no more.
 
 ## Wiring
+
+Solder with the base plate **off the stand and inverted** — then the tails are
+7 free-standing stubs on a flat surface with nothing around them. Once the
+stand is on, the space is still open (22 mm of clear height under a plate whose
+tails only reach down 5.7 mm) but you are working in a well.
+
+The tails sit on a 4.3 mm minimum pitch, so use **30 AWG silicone wire**
+(≈0.8 mm OD) rather than 26 AWG. Current is a non-issue — the MCU draws tens
+of milliamps and each probe is rated 3 A — and the thinner wire makes the
+cluster far easier to work in. Run the loom out through the slot on the far
+side from the clamp and zip-tie it to the divider post; that post, not the
+solder joints, should take any pull on the cable.
 
 | Probe | Net | ST-Link | Note |
 |---|---|---|---|

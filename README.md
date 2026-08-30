@@ -60,8 +60,9 @@ the board footprint supported.
 |---|---|
 | ![](cad/out/v_iso_front_right.png) | ![](cad/out/v_top.png) |
 | ![](cad/out/v_open.png) | ![](cad/out/v_probes.png) |
+| ![](cad/out/v_wiring.png) | ![](cad/out/v_tower.png) |
 
-`python3 tools/render.py` regenerates all twelve; `python3 tools/render.py top
+`python3 tools/render.py` regenerates all fifteen; `python3 tools/render.py top
 probes` does just those. The renderer is a small software z-buffer rasteriser
 (orthographic, backface-culled, 2x supersampled, with a depth-discontinuity
 outline pass) — a painter's-algorithm sort mis-orders the stand's large flat
@@ -74,10 +75,9 @@ faces against the base plate.
 | `base_plate` | flat, posts up | The precision part: 7 probe bores, 4 guide posts, spring pockets |
 | `nest` | flat | Board recess, relief window, two locator pins |
 | `cover` | pads up | Hold-down; presses only on bare board |
-| `stand` | as modelled | Lifts the plate 16 mm for wiring; carries the clamp pedestal |
-| `clamp_riser` | as modelled | The one part you re-print to suit your clamp |
+| `stand` | as modelled | One piece: open frame giving 22 mm of wiring space, plus the clamp tower |
 
-STEP and STL for all five are in [`cad/out/`](cad/out).
+STEP and STL for all four are in [`cad/out/`](cad/out).
 
 ## Getting started
 

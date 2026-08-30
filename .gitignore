@@ -39,3 +39,6 @@ cad/out/assembly_closed.step
 # Meshed board, for renders only: 5 MB, regenerable, and it is the private
 # board's geometry.
 cad/out/pcba.stl
+
+# Render aid only: probe hardware, not a printed part.
+cad/out/probes_hw.st*

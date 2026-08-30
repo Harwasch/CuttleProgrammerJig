@@ -90,8 +90,14 @@ MOUNT_SCREW_D        =   3.4   # M3 clearance, base plate -> stand
 MOUNT_SCREW_XY       = [(-59.0, -15.5), (-59.0, 15.5), (56.0, -15.5), (56.0, 15.5)]
 
 # ------------------------------------------------------------------ stand ---
-STAND_Z_BOTTOM       = -24.0   # 16 mm of open space under the plate for wiring
+# One monolithic part: the open frame under the base plate and the clamp tower
+# are the same walls, not a bolt-on bracket.
+STAND_Z_BOTTOM       = -30.0   # 22 mm of open space under the plate for wiring
 STAND_WALL           =   4.0
+TOWER_TOP_Z          =  12.0   # clamp mounting deck
+TOWER_DECK_T         =   5.0
+WIRE_EXIT_Z          = (-26.0, -12.0)   # loom exit, on the far side from the clamp
+TIE_BAR_W            =   4.0           # vertical divider, to tie the loom against
 WIRE_SLOT_W          =  20.0
 
 # ----------------------------------------------------------------- cover ----
@@ -106,17 +112,15 @@ COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip, at the pad cent
 # The riser is a separate part on a slotted rail so it can be tuned to the
 # clamp you actually have without reprinting the base.
 RAIL_SLOT_D          =   4.4   # M4 clearance
-# The clamp sits on a pedestal that is part of the stand, with a plain spacer
-# block on top. That block is the ONE part tuned to the clamp you actually
-# have: change RISER_TOP_Z and reprint it (a 20 minute print). Nothing else in
-# the jig moves.
+# The clamp tower is part of the stand. Its deck slots are longer than the
+# clamp's own so the GH-201 still slides fore and aft; height comes from the
+# spindle. Changing TOWER_TOP_Z means reprinting the stand.
 PEDESTAL_X           = (-44.0,  -6.0)
 PEDESTAL_Y           = (-52.0, -20.0)
-RISER_X              = (-42.0,  -8.0)
-RISER_Y              = (-50.0, -21.0)   # 1 mm clear of the base plate edge
-RISER_TOP_Z          =  12.0            # nominal clamp mounting height
-RISER_BOLT_XY        = [(-36.0, -46.0), (-14.0, -46.0),
-                        (-36.0, -25.0), (-14.0, -25.0)]
+CLAMP_SLOT_TRAVEL    =   8.0   # extra length on the deck slots, for reach trim
+NUT_CHANNEL_W        =   7.2   # M4 nut across flats, sliding fit
+NUT_CHANNEL_H        =   3.6
+RAIL_SLOT_D          =   4.4   # M4 clearance
 CLAMP_BASE_W         =  25.0   # GH-201 body, checked against the riser deck
 CLAMP_BASE_L         =  75.0
 CLAMP_SLOT_L         =   6.0
