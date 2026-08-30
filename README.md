@@ -5,7 +5,7 @@ board over SWD, using P50-B1 pogo probes against the seven bare-copper test
 points on the underside of the board. No PCB required — five printed parts,
 four springs, seven probes and a GH-201 toggle clamp.
 
-![assembly](cad/out/r_assembly.png)
+![assembly](cad/out/v_exploded.png)
 
 ## How it works
 
@@ -53,6 +53,19 @@ be — under every bottom-side part and around each probe — which keeps 76 % o
 the board footprint supported.
 
 ![nest plan](cad/out/nest_plan.png)
+
+## Views
+
+| | |
+|---|---|
+| ![](cad/out/v_iso_front_right.png) | ![](cad/out/v_top.png) |
+| ![](cad/out/v_open.png) | ![](cad/out/v_probes.png) |
+
+`python3 tools/render.py` regenerates all twelve; `python3 tools/render.py top
+probes` does just those. The renderer is a small software z-buffer rasteriser
+(orthographic, backface-culled, 2x supersampled, with a depth-discontinuity
+outline pass) — a painter's-algorithm sort mis-orders the stand's large flat
+faces against the base plate.
 
 ## Parts
 
