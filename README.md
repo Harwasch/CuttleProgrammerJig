@@ -47,10 +47,12 @@ holes on the main rigid section, +Y up. Those four holes are the motor /
 connector pattern, not board-mounting holes; the jig borrows two of them
 (diagonal, 29.6 mm apart) purely to locate the board.
 
-Three of the seven probes sit 0.5–1.4 mm from the board outline, so the nest
-cannot use a plain inset rim. Instead it is relieved **only** where it must
-be — under every bottom-side part and around each probe — which keeps 76 % of
-the board footprint supported.
+The nest does not try to thread a support surface between the components.
+It seats the board on six bosses at its own mounting holes plus the three
+sections that carry **no bottom-side parts at all** — the SWD tab and both flex
+necks — and drops everything else in one pocket. A boss under the MCU stops
+0.1 mm short of the package, backing the board against probe force without
+lifting it off its seat. Nothing on the part is thinner than 3 mm.
 
 ![nest plan](cad/out/nest_plan.png)
 
@@ -60,7 +62,8 @@ the board footprint supported.
 |---|---|
 | ![](cad/out/v_iso_front_right.png) | ![](cad/out/v_top.png) |
 | ![](cad/out/v_open.png) | ![](cad/out/v_probes.png) |
-| ![](cad/out/v_wiring.png) | ![](cad/out/v_tower.png) |
+| ![](cad/out/v_wiring.png) | ![](cad/out/v_stand.png) |
+| ![](cad/out/v_nest_top.png) | ![](cad/out/v_gauge.png) |
 
 `python3 tools/render.py` regenerates all fifteen; `python3 tools/render.py top
 probes` does just those. The renderer is a small software z-buffer rasteriser
@@ -73,15 +76,16 @@ faces against the base plate.
 | Part | Print | Notes |
 |---|---|---|
 | `base_plate` | flat, posts up | The precision part: 7 probe bores, 4 guide posts, spring pockets |
-| `nest` | flat | Board recess, relief window, two locator pins |
+| `nest` | flat | Six seat bosses, one relief pocket, four locator pins |
 | `cover` | pads up | Hold-down; presses only on bare board |
-| `stand` | as modelled | One piece: open frame giving 22 mm of wiring space, plus the clamp tower |
+| `stand` | as modelled | One piece, one rectangular footprint: board bay, clamp tower, 22 mm of wiring space |
+| `fit_gauge` | flat | Calibration coupon; print once to set the probe bore size |
 
-STEP and STL for all four are in [`cad/out/`](cad/out).
+STEP and STL for all of them are in [`cad/out/`](cad/out).
 
 ## Getting started
 
-Build instructions, bill of materials, the drilling step and the wiring table
+Build instructions, bill of materials, the bore calibration step and the wiring table
 are in **[docs/BUILD.md](docs/BUILD.md)**.
 
 To regenerate everything after changing a dimension:

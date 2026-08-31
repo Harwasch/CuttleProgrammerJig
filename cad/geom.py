@@ -45,18 +45,48 @@ def probe_islands():
                         for t in TEST_POINTS])
 
 
-def nest_window():
-    """Through-window in the nest plate.
+def boss_radius(name):
+    """Largest seat boss that still clears the nearest bottom-side part."""
+    x, y = HOLES[name]
+    p = Point(x, y)
+    near = min(b.distance(p) for b in part_boxes("bottom"))
+    return min(P.BOSS_R_MAX, max(1.6, near - P.BOSS_PART_CLEAR))
 
-    Relieved only where it must be: under every bottom-side part, and around
-    every probe island (island + PLATFORM_GAP) so the nest can travel past the
-    platform. Everywhere else the nest keeps full-thickness board support --
-    which matters here because three probes sit 0.5-1.4 mm from the outline.
+
+def seat_bosses():
+    """Footprints the board actually rests on, at full seat height.
+
+    Clipped to the board outline: a boss has nothing to support beyond the
+    board edge, and letting one run past would eat into the recess lip.
     """
-    relief = part_boxes("bottom", grow=P.PART_CLEAR_XY)
-    probes = [Point(t["x"], t["y"]).buffer(P.PROBE_ISLAND_R + P.PLATFORM_GAP, ARC_SEGS)
-              for t in TEST_POINTS]
-    return unary_union(relief + probes).buffer(0)
+    discs = unary_union([Point(*HOLES[n]).buffer(boss_radius(n), ARC_SEGS)
+                         for n in P.SEAT_BOSSES])
+    return discs.intersection(OUTLINE).buffer(0)
+
+
+def bare_sections():
+    """Board sections with no bottom-side parts at all -- the left tab and both
+    flex necks. These take full-height support, which is what keeps the flex
+    flat without any of it hanging in space."""
+    strips = [box(lo, -30, hi, 30) for lo, hi in P.BARE_SECTIONS]
+    return unary_union(strips).intersection(OUTLINE).buffer(0)
+
+
+def nest_recess():
+    """The single pocket that drops the nest clear of the components.
+
+    Everything inside the board outline goes down by NEST_RECESS except the
+    seat bosses and the bare sections. One pocket, no ribs threaded between
+    parts, so there is nothing thin to print.
+    """
+    keep = seat_bosses().union(bare_sections())
+    return OUTLINE.difference(keep).buffer(0)
+
+
+def probe_clear():
+    """Holes through the nest for the base's probe islands."""
+    return unary_union([Point(t["x"], t["y"]).buffer(P.PROBE_CLEAR_D / 2, ARC_SEGS)
+                        for t in TEST_POINTS])
 
 
 def board_recess():

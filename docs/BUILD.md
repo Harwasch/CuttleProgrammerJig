@@ -6,6 +6,7 @@
 |---:|---|---|
 | 7 | P50-B1 spring test probe | Ø0.68 mm tube, 16.35 mm, 30° spear tip, 75 g |
 | 7 | R50-2S receptacle | Ø0.86 mm body, 17.5 mm, solder slot |
+| 1 | `fit_gauge` print | calibration coupon, printed once |
 | 4 | Compression spring, 0.6 × 7 mm, **15 mm free length** | from the assortment kit |
 | 1 | GH-201 horizontal toggle clamp | 75 × 25 × 17 mm, 27 kg |
 | 4 | M4 × 16 screw + M4 nut | toggle clamp to the tower, nuts in the slide channels |
@@ -20,34 +21,44 @@ continuous spring load and PLA creeps.
 
 | Setting | Value | Why |
 |---|---|---|
-| Layer height | 0.15 mm | probe-bore pilots and the 0.8 mm nest lip |
-| Perimeters | 4 | posts and probe islands are small and loaded |
-| Infill | 40 % | |
-| Hole horizontal expansion | **0** | the bores are drilled, so leave them undersize |
-| Supports | none needed | every part prints without overhangs as oriented |
+| Layer height | 0.15 mm | probe bores and the 0.8 mm nest lip |
+| Perimeters | 4 | posts, probe islands and locator pins are small and loaded |
+| Infill | 30 % | |
+| Hole horizontal expansion | **0** | you calibrate with the gauge instead |
+| Supports | **none** | see below |
 
-Orientation: `base_plate` bore-side up (posts up, flat underside on the bed),
-`nest` lip up, `cover` pads up, `stand` on its own base as modelled.
+Orientation: `base_plate` posts up (flat underside on the bed), `nest` lip up,
+`cover` **pads up** (inverted from how it is modelled), `stand` on its own base.
+In those orientations every feature is a vertical wall or a vertical hole. The
+largest unsupported span anywhere is 15 mm, inside the clamp tower, which
+bridges without help. `verify.py` checks this each build.
 
-## The one machining step
+## Calibrate the probe bores first
 
-The probe bores are modelled at **Ø0.85 mm — deliberately undersize** and must
-be drilled to **Ø0.90 mm** (the R50 sleeve's specified drill size). A 0.9 mm
-PCB or micro twist drill in a pin vise, run through the printed pilot by hand,
-gives a clean, straight, accurately located bore; a printed hole alone will
-not. There are seven of them, in the raised platform, each 8.5 mm deep
-including the Ø1.05 mm sleeve-head counterbore at the top.
+There is no drilling. The probe bores print to final size — but FDM renders a
+small vertical hole undersize by an amount specific to your printer, nozzle,
+material and speed, so you calibrate once:
 
-Do this before assembling anything else, and test-fit one sleeve: it should
-push in with firm thumb pressure and not rotate freely.
+1. Print `fit_gauge.stl` (65 × 14 mm, about 15 minutes) in the **same material
+   and profile** you will use for the base plate. It has eight bores labelled
+   85 to 120, in hundredths of a millimetre.
+2. Try an R50 sleeve in each. You want the smallest hole it enters with firm
+   thumb pressure and does not rattle in.
+3. Put that number in `PIN_BORE_D` in [`cad/params.py`](../cad/params.py) and
+   run `python3 jig.py`.
+
+The default, 1.00, is a typical result for a 0.4 mm nozzle. The bore is 9 mm
+long on a 17.5 mm sleeve, so even a sloppy fit barely moves the tip: at 0.04 mm
+of play the probe lands within 0.28 mm of the pad centre against a 0.35 mm
+budget, and `verify.py` prints that sum.
 
 ## Assembly
 
-1. Drill the seven probe bores to Ø0.90 mm.
-2. Press an **R50-2S sleeve** into each bore from the top, tail first, until it
-   stops. The tail then projects 5.7 mm below the plate into open air.
-   A Ø0.90 bore is a slip fit on the Ø0.86 body, so the bore locates the
-   sleeve but does not retain it — see Wiring for how to lock it.
+1. Calibrate `PIN_BORE_D` with the gauge and print the parts.
+2. Push an **R50-2S sleeve** into each bore from the top, tail first, through
+   the Ø1.4 mm lead-in, until its top is flush with the platform. The tail then
+   projects 5.7 mm below the plate into open air. The bore locates the sleeve;
+   it does not necessarily retain it — see Wiring.
 3. With the plate still off the stand and turned upside down, solder a wire to
    each sleeve tail, then wick a drop of thin CA into each sleeve/bore joint
    from below to lock it. Label the wires as you go.
@@ -57,7 +68,11 @@ push in with firm thumb pressure and not rotate freely.
    travel on top of the clamp's own, so set the reach here and the height on
    the spindle.
 6. Drop a spring into each of the four base counterbores, over the guide
-   posts, then lower the `nest` onto the posts.
+   posts, then lower the `nest` onto the posts. The board then seats on six
+   bosses — one at each of its own mounting holes — and on the SWD tab and both
+   flex necks, which carry no bottom-side parts at all. Four pins engage the
+   main-section holes: MH1 and MH4 at Ø2.05 locate the board, MH2 and MH3 at
+   Ø1.80 support without fighting them.
 7. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
    stand 3.35 mm proud of the platform.
 8. Adjust the clamp spindle so that, closed, it seats in the dimple on the
@@ -125,10 +140,14 @@ number sets the platform height and therefore the probe compression; the
 verification script re-derives everything from it. If your probes measure,
 say, 3.6 mm, the platform simply drops 0.25 mm.
 
+**`PIN_BORE_D` (1.00 mm)** — calibrated from the fit gauge, as above. This is
+the one number that depends on your printer rather than on the parts.
+
 **`CLAMP_SLOT_DX` / `CLAMP_SLOT_DY` (15.9 / 11.1 mm)** — the GH-201 mounting
 slot pattern, read off the product drawing rather than measured. Check yours
 with calipers before printing the riser.
 
-`RISER_TOP_Z` (12 mm) sets how high the clamp sits. The GH-201's spindle is
-adjustable over a wide range, so this should not need changing — but if the
-clamp cannot reach the cover, raise it and reprint the riser alone.
+`TOWER_TOP_Z` (12 mm) sets how high the clamp sits. Reach is adjustable — the
+deck slots give 8 mm on top of the clamp's own, and the spindle covers height —
+but the deck height itself is now part of the stand, so changing it means
+reprinting the stand.

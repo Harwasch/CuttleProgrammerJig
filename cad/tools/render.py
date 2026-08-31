@@ -22,7 +22,8 @@ SS = 2                      # supersampling factor
 LIGHT = np.array([0.45, -0.75, 0.62])
 
 COLOR = dict(base_plate="#4d7fc4", nest="#dfa03a", cover="#c0574f",
-             stand="#9aa0a6", pcba="#12602c", probes_hw="#d8b23a")
+             stand="#9aa0a6", pcba="#12602c", probes_hw="#d8b23a",
+             fit_gauge="#6f8fae")
 
 
 def load_stl(path):
@@ -200,9 +201,19 @@ VIEWS = {
                         "solder side - seven R50 sleeve tails, 5.7 mm proud, "
                         "tightest pair 4.3 mm apart",
                         (-24.7, -1.5, -11.0, 16.0)),
-    "tower":           ([("stand", 0)], 128, 24,
-                        "stand - the clamp tower is the pedestal walls carried up, "
-                        "not a bracket"),
+    "stand":           ([("stand", 0)], 34, 30,
+                        "stand - one rectangular footprint, walls and ribs only"),
+    "stand_top":       ([("stand", 0)], 20, 62,
+                        "stand from above - board bay, clamp tower, tie-off ribs"),
+    "nest_top":        ([("nest", 0)], 30, 52,
+                        "nest - six seat bosses, one relief pocket, four locator pins",
+                        (-14.0, 0.0, 5.0, 42.0)),
+    "nest_probes":     ([("nest", 0)], 26, 46,
+                        "nest, probe end - MCU backing boss inside the pocket",
+                        (-26.0, 0.0, 5.0, 17.0)),
+    "gauge":           ([("fit_gauge", 0)], 22, 46,
+                        "fit gauge - print once, find the hole an R50 sleeve just "
+                        "enters, put that number in PIN_BORE_D"),
     "probes":          ([("base_plate", 0), ("probes_hw", 0)], 18, 62,
                         "base plate close-up - all seven probe islands, "
                         "cut back where a bottom-side part would foul them",

@@ -46,13 +46,15 @@ def build_base_plate():
             Circle(P.POST_D / 2), amount=P.POST_TOP_Z + P.BASE_SPRING_DEPTH)
         part += post
 
-    # probe bores: head counterbore, precision bore, then loose clearance
+    # Probe bores, printed to final size. A short lead-in, then a long bore --
+    # 9 mm of engagement on a 17.5 mm sleeve, so tilt contributes almost
+    # nothing to where the tip lands -- then loose clearance to the underside.
     for tp in G.TEST_POINTS:
         p = Pos(tp["x"], tp["y"])
         top = P.Z_PIN_TOP
-        part -= p * Pos(0, 0, top - P.RECEPT_HEAD_L) * extrude(
-            Circle(P.PIN_HEAD_BORE_D / 2), amount=P.RECEPT_HEAD_L + 0.1)
-        bore_top = top - P.RECEPT_HEAD_L
+        part -= p * Pos(0, 0, top - P.PIN_LEAD_L) * extrude(
+            Circle(P.PIN_LEAD_D / 2), amount=P.PIN_LEAD_L + 0.1)
+        bore_top = top - P.PIN_LEAD_L
         part -= p * Pos(0, 0, bore_top - P.PIN_BORE_L) * extrude(
             Circle(P.PIN_BORE_D / 2), amount=P.PIN_BORE_L)
         clr_top = bore_top - P.PIN_BORE_L
@@ -67,20 +69,43 @@ def build_base_plate():
 
 # -------------------------------------------------------------------- nest --
 def build_nest():
+    """Floating board carrier.
+
+    The board sits on six chunky bosses at its own mounting holes plus the
+    three sections that carry no bottom-side parts at all (the SWD tab and both
+    flex necks). Everything else drops away in ONE pocket, so there are no ribs
+    threaded between components and nothing thin to print. A boss under the MCU
+    stops just short of the package: it backs up the board against probe force
+    without lifting it off its seat.
+    """
     top = P.NEST_T + P.NEST_LIP
     part = extrude(rrect(P.NEST_X, P.NEST_Y, P.NEST_FILLET), amount=top)
 
-    # drop-in board recess, then the relief window straight through
+    # drop-in board recess, then the single component pocket
     part -= extrude(G.sk(G.board_recess(), Plane.XY.offset(P.NEST_T)), amount=P.NEST_LIP)
-    part -= extrude(G.sk(G.nest_window(), Plane.XY.offset(-0.1)), amount=top + 0.2)
+    floor = P.NEST_T - P.NEST_RECESS
+    part -= extrude(G.sk(G.nest_recess(), Plane.XY.offset(floor)), amount=P.NEST_RECESS)
+
+    # backing boss under the MCU, held clear of the package by MCU_BOSS_CLEAR
+    mx, my, ms, mh = P.MCU_BOSS
+    part += Pos(mx, my, floor) * extrude(
+        Rectangle(ms, ms), amount=P.NEST_RECESS - mh - P.MCU_BOSS_CLEAR)
+
+    # clearance for the base's probe islands, full depth
+    part -= extrude(G.sk(G.probe_clear(), Plane.XY.offset(-0.1)), amount=top + 0.2)
 
     for x, y in P.POST_XY:
         part -= Pos(x, y, -0.1) * extrude(Circle(P.POST_HOLE_D / 2), amount=top + 0.2)
         part -= Pos(x, y) * extrude(Circle(P.SPRING_POCKET_D / 2),
                                     amount=P.NEST_SPRING_DEPTH)
-    for name in P.LOCATOR_HOLES:
-        x, y = G.HOLES[name]
-        part += Pos(x, y, P.NEST_T) * extrude(Circle(P.LOCATOR_D / 2), amount=P.LOCATOR_H)
+
+    # All four main-section holes take a pin. Two locate; the other two are
+    # undersize so they engage without fighting the first pair.
+    for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
+                       (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
+        for name in names:
+            x, y = G.HOLES[name]
+            part += Pos(x, y, P.NEST_T) * extrude(Circle(dia / 2), amount=P.LOCATOR_H)
     return part
 
 
@@ -110,8 +135,8 @@ def build_cover():
     for x, y in P.COVER_POSTS:
         part -= Pos(x, y, -0.1) * extrude(Circle(P.POST_HOLE_D / 2),
                                           amount=P.COVER_PAD_H + P.COVER_T + 0.2)
-    # clearance for the nest's board locator that falls under the cover
-    for name in P.LOCATOR_HOLES:
+    # clearance for any nest locator pin that falls under the cover
+    for name in P.LOCATOR_PRIMARY + P.LOCATOR_SECONDARY:
         x, y = G.HOLES[name]
         if xr[0] < x < xr[1] and yr[0] < y < yr[1]:
             part -= Pos(x, y, -0.1) * extrude(Circle(P.LOCATOR_D / 2 + 1.0),
@@ -123,52 +148,67 @@ def build_cover():
 
 # ------------------------------------------------------------------- stand --
 def build_stand():
-    """One monolithic part. The open frame under the base plate and the clamp
-    tower are the same shell: the tower is the pedestal walls carried straight
-    up to a mounting deck, not a bracket bolted to the side.
+    """One monolithic part, one full rectangular footprint.
 
-    Prints standing on its own base with no overhangs -- every wall is
-    vertical and the only horizontal roof is the tower deck, which is closed
-    by the four clamp slots' own bridging.
+    FDM notes: every feature here is a vertical wall or a vertical hole. The
+    shell is open top and bottom, so there is no roof to bridge; the base plate
+    lands on a bay wall that runs all the way to the bench rather than on
+    cantilevered bosses; the clamp tower is solid up to a shallow nut channel;
+    and the loom slot is split by a post so its top edge spans 8 mm, not 20.
     """
     z0, z1 = P.STAND_Z_BOTTOM, P.PLATE_Z_BOTTOM
     W = P.STAND_WALL
+    h = z1 - z0
 
-    # frame under the base plate, and the tower shell, as one outer solid
-    frame = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0), amount=z1 - z0)
-    tower = extrude(rrect(P.PEDESTAL_X, P.PEDESTAL_Y, P.PLATE_FILLET, z0),
+    def shell(xr, yr, fil, height, top=None):
+        """Outer prism minus its own interior -- walls only, open top and bottom."""
+        outer = extrude(rrect(xr, yr, fil, z0), amount=height)
+        inner = extrude(rrect((xr[0] + W, xr[1] - W), (yr[0] + W, yr[1] - W),
+                              max(fil - W, 1.0), z0 - 0.1), amount=height + 0.2)
+        return outer - inner
+
+    # outer shell, and the bay whose wall top carries the base plate
+    part = shell(P.STAND_X, P.STAND_Y, 6.0, h)
+    part += shell(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, h)
+
+    # ribs tying the bay to the outer shell, inset so nothing overhangs the
+    # filleted corners, and placed clear of the probe cluster (x -32 to -17)
+    ry0, ry1 = P.STAND_Y[0] + W, P.STAND_Y[1] - W
+    for x in P.RIB_X:
+        part += Pos(x, (ry0 + ry1) / 2, z0 + h / 2) * Box(W, ry1 - ry0, h)
+    rx0, rx1 = P.STAND_X[0] + W, P.STAND_X[1] - W
+    for y in (P.PLATE_Y[0], P.PLATE_Y[1]):
+        part += Pos((rx0 + rx1) / 2, y, z0 + h / 2) * Box(rx1 - rx0, W, h)
+
+    # Clamp tower, sharing the shell's walls. Solid only in the top band that
+    # carries the nut channels and the deck; hollow below, divided by a cross
+    # rib so the cavity roof bridges about 13 mm rather than 30.
+    part += extrude(rrect(P.PEDESTAL_X, P.PEDESTAL_Y, P.PLATE_FILLET, z0),
                     amount=P.TOWER_TOP_Z - z0)
-    part = frame + tower
+    tx, ty = P.PEDESTAL_X, P.PEDESTAL_Y
+    part -= extrude(rrect((tx[0] + W, tx[1] - W), (ty[0] + W, ty[1] - W), 2.0, z0 - 0.1),
+                    amount=P.TOWER_SOLID_Z - z0 + 0.1)
+    tcx, tcy = (tx[0] + tx[1]) / 2, (ty[0] + ty[1]) / 2
+    part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
+        Box(W, ty[1] - ty[0] - 2 * W, P.TOWER_SOLID_Z - z0)
+    part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
+        Box(tx[1] - tx[0] - 2 * W, W, P.TOWER_SOLID_Z - z0)
 
-    # hollow both, leaving the tower deck
-    part -= extrude(rrect((P.PLATE_X[0] + W, P.PLATE_X[1] - W),
-                          (P.PLATE_Y[0] + W, P.PLATE_Y[1] - W), 2.0, z0 - 0.1),
-                    amount=(z1 - z0) + 0.2)
-    # The tower stays solid (slicer infill) up to a shallow nut channel under
-    # the deck. A full-height cavity would print fine but would leave you
-    # fishing for an M4 nut 40 mm down a hole.
-    part -= extrude(rrect((P.PEDESTAL_X[0] + W, P.PEDESTAL_X[1] - W),
-                          (P.PEDESTAL_Y[0] + W, P.PEDESTAL_Y[1]), 2.0, z0 - 0.1),
-                    amount=P.PLATE_Z_BOTTOM - z0 + 0.1)
-
-    # screw bosses carrying the base plate
+    # base-plate screws: full-height columns, so nothing hangs in air
     for x, y in P.MOUNT_SCREW_XY:
-        part += Pos(x, y, z1 - 10.0) * extrude(Circle(4.5), amount=10.0)
-        part -= Pos(x, y, z1 - 10.2) * extrude(Circle(1.4), amount=10.4)
+        part += Pos(x, y, z0) * extrude(Circle(4.5), amount=h)
+        part -= Pos(x, y, z1 - 10.0) * extrude(Circle(1.4), amount=10.2)
 
-    # Loom exit on the far side from the clamp. A vertical divider splits the
-    # opening in two: it gives the zip tie something to pull against, and it
-    # halves the span the slot's top edge has to bridge when printing.
-    ey = P.PLATE_Y[1]
+    # loom exit, straight out through the bay wall and the outer wall
     zc = (P.WIRE_EXIT_Z[0] + P.WIRE_EXIT_Z[1]) / 2
     zh = P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]
-    part -= Pos(0, ey, zc) * Box(P.WIRE_SLOT_W, W * 3, zh)
-    part += Pos(0, ey - W / 2, zc) * Box(P.TIE_BAR_W, W, zh)
+    ymid = (P.PLATE_Y[1] + P.STAND_Y[1]) / 2
+    part -= Pos(0, ymid, zc) * Box(P.WIRE_SLOT_W,
+                                   P.STAND_Y[1] - P.PLATE_Y[1] + 4 * W, zh)
+    for sy in (P.PLATE_Y[1] - W / 2, P.STAND_Y[1] - W / 2):
+        part += Pos(0, sy, zc) * Box(P.TIE_BAR_W, W, zh)
 
-    # Clamp mounting: slots through the deck, longer than the GH-201's own so
-    # the clamp can slide toward or away from the board, over a captive-nut
-    # channel. The channel is open at the back face, so an M4 nut slides in
-    # from outside and the channel walls stop it turning.
+    # clamp mounting: deck slots over a captive-nut channel open at the back
     cx = (P.PEDESTAL_X[0] + P.PEDESTAL_X[1]) / 2
     cy = (P.PEDESTAL_Y[0] + P.PEDESTAL_Y[1]) / 2
     deck = P.TOWER_TOP_Z - P.TOWER_DECK_T
@@ -182,6 +222,28 @@ def build_stand():
         y1 = cy + P.CLAMP_SLOT_DY / 2 + (P.CLAMP_SLOT_W + P.CLAMP_SLOT_TRAVEL) / 2 + 2.0
         part -= Pos(x, (y0 + y1) / 2, deck - P.NUT_CHANNEL_H / 2) * \
             Box(P.NUT_CHANNEL_W, y1 - y0, P.NUT_CHANNEL_H)
+    return part
+
+
+# --------------------------------------------------------------- fit gauge --
+def build_fit_gauge():
+    """Calibration coupon: one row of bores stepping through GAUGE_BORES.
+
+    Print it in the material and profile you will use for the base plate, find
+    the hole an R50 sleeve just pushes into, and put that number in
+    PIN_BORE_D. That replaces drilling the plate afterwards.
+    """
+    n = len(P.GAUGE_BORES)
+    pitch, t = 7.5, P.PIN_BORE_L + 2.0
+    w, d = n * pitch + 5.0, 14.0
+    part = extrude(rrect((-w / 2, w / 2), (-d / 2, d / 2), 2.0), amount=t)
+    for i, dia in enumerate(P.GAUGE_BORES):
+        x = (i - (n - 1) / 2) * pitch
+        part -= Pos(x, 3.0, -0.1) * extrude(Circle(dia / 2), amount=t + 0.2)
+        # label in hundredths of a mm: 85, 90, ... 120
+        part -= Pos(x, -4.0, t - 0.6) * extrude(
+            Text(f"{round(dia * 100)}", font_size=3.4,
+                 align=(Align.CENTER, Align.CENTER)), amount=0.7)
     return part
 
 
@@ -207,6 +269,7 @@ PARTS_TO_BUILD = {
     "nest": build_nest,
     "cover": build_cover,
     "stand": build_stand,
+    "fit_gauge": build_fit_gauge,
 }
 
 

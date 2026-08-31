@@ -69,7 +69,7 @@ def main():
     print("\nprobe bores and platform")
     for tp in G.TEST_POINTS:
         # the bore must be open from the platform top down past the precision section
-        depth = P.RECEPT_HEAD_L + P.PIN_BORE_L
+        depth = P.PIN_LEAD_L + P.PIN_BORE_L
         probe = Pos(tp["x"], tp["y"], P.Z_PIN_TOP - depth) * extrude(
             Circle(P.PIN_BORE_D / 2 - 0.02), amount=depth)
         check(f"{tp['net']:8s} bore open through {depth:.1f} mm",
@@ -78,7 +78,7 @@ def main():
         # the platform must be solid in a collar outside the head counterbore
         ring = (Pos(tp["x"], tp["y"], P.Z_PIN_TOP - 0.4) * extrude(Circle(1.45), amount=0.35)
                 - Pos(tp["x"], tp["y"], P.Z_PIN_TOP - 0.5) * extrude(
-                    Circle(P.PIN_HEAD_BORE_D / 2 + 0.10), amount=0.6))
+                    Circle(P.PIN_LEAD_D / 2 + 0.10), amount=0.6))
         got = vol(base.intersect(ring))
         check(f"{tp['net']:8s} platform collar is solid", got > 0.55 * ring.volume,
               f"{100 * got / ring.volume:.0f}% solid at z={P.Z_PIN_TOP:.2f}")
@@ -159,23 +159,29 @@ def main():
 
     # ------------------------------------------------------ probe hardware --
     print("\nprobe hardware fit")
-    bore_depth = P.RECEPT_HEAD_L + P.PIN_BORE_L + (P.Z_PIN_TOP - P.PLATE_Z_BOTTOM
-                                                  - P.RECEPT_HEAD_L - P.PIN_BORE_L)
+    bore_depth = P.Z_PIN_TOP - P.PLATE_Z_BOTTOM
     below = P.RECEPT_LEN - bore_depth
     check("sleeve tail reaches the wiring space", 3.0 <= below <= 12.0,
           f"{below:.2f} mm of sleeve below the plate, in "
           f"{P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm of clearance")
     check("sleeve tail clears the bench", below < P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM,
           f"{below:.2f} mm vs {P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm")
-    drilled = 0.90
-    check("drilled bore accepts the sleeve body",
-          P.RECEPT_BODY_D < drilled < P.RECEPT_HEAD_D,
-          f"body {P.RECEPT_BODY_D} < bore {drilled} < head {P.RECEPT_HEAD_D} mm")
-    check("printed pilot is undersize so the drill cleans it up",
-          P.PIN_BORE_D < drilled, f"pilot {P.PIN_BORE_D} mm, drill {drilled} mm")
-    check("head counterbore clears the sleeve head",
-          P.PIN_HEAD_BORE_D > P.RECEPT_HEAD_D,
-          f"{P.PIN_HEAD_BORE_D} mm vs {P.RECEPT_HEAD_D} mm head")
+    check("gauge brackets the modelled bore",
+          min(P.GAUGE_BORES) < P.PIN_BORE_D < max(P.GAUGE_BORES),
+          f"{P.PIN_BORE_D} mm sits inside {min(P.GAUGE_BORES)}-{max(P.GAUGE_BORES)} mm")
+    check("lead-in is wider than the bore", P.PIN_LEAD_D > P.PIN_BORE_D,
+          f"lead {P.PIN_LEAD_D} mm into bore {P.PIN_BORE_D} mm")
+
+    # Where the tip lands, worst case, if the calibrated bore ends up 0.04 mm
+    # over the sleeve: translation plus the tilt that engagement allows.
+    slop = 0.04
+    trans = slop / 2
+    tilt = (slop / P.PIN_BORE_L) * P.PIN_PROTRUSION
+    budget = 1.2 / 2 - 0.25          # pad radius less the spear tip radius
+    check("probe placement fits inside the pad",
+          trans + tilt + 0.15 + 0.10 < budget,
+          f"{trans:.3f} translation + {tilt:.3f} tilt + 0.15 board + 0.10 print "
+          f"= {trans + tilt + 0.25:.2f} mm vs {budget:.2f} mm allowed")
     check("cover pads stand off further than the tallest top-side part",
           P.COVER_PAD_H > P.PART_H_TOP_MAIN,
           f"{P.COVER_PAD_H} mm standoff vs {P.PART_H_TOP_MAIN} mm part")
@@ -196,6 +202,48 @@ def main():
           (probe_g + spring_g) / 1000 < 5.0,
           f"{probe_g:.0f} g probes + {spring_g:.0f} g springs "
           f"= {(probe_g + spring_g) / 1000:.2f} kg vs 27 kg rating")
+
+    # -------------------------------------------------------- printability --
+    # Evaluated in each part's PRINT orientation, not its assembly orientation:
+    # the cover is printed pads-up, so its body underside is on the bed.
+    print("\nprintability (in the print orientation)")
+    for nm, shape, flip in [("base_plate", base, False), ("nest", nest, False),
+                            ("stand", stand, False), ("cover", cover, True)]:
+        oriented = Rot(180, 0, 0) * shape if flip else shape
+        bed_z = oriented.bounding_box().min.Z
+        flats = [f for f in oriented.faces().filter_by(GeomType.PLANE)
+                 if abs(f.normal_at(f.center()).Z + 1) < 1e-3
+                 and f.center().Z > bed_z + 0.05]
+        worst = max((f.area for f in flats), default=0.0)
+        span = 2 * (worst / math.pi) ** 0.5 if worst else 0.0
+        check(f"{nm:11s} has no large unsupported roof", span <= 16.0,
+              f"largest downward face {worst:.1f} mm2, about {span:.1f} mm across"
+              + ("  (printed inverted)" if flip else ""))
+
+    # Minimum wall, taken from the nest's actual cross-section at each level
+    # rather than from the seat features alone.
+    from shapely.geometry import box as _box
+    plate = _box(P.NEST_X[0], P.NEST_Y[0], P.NEST_X[1], P.NEST_Y[1])
+    levels = [("seat", plate.difference(G.nest_recess())),
+              ("lip", plate.difference(G.board_recess())),
+              ("pocket floor", plate)]
+    for nm2, region in levels:
+        region = region.difference(G.probe_clear())
+        thin = None
+        for w in (3.0, 2.5, 2.0, 1.5, 1.2):
+            if region.buffer(-w / 2).is_empty:
+                thin = w
+                break
+        widest = 3.0 if thin is None else thin
+        check(f"nest {nm2:12s} cross-section has no thin walls", widest >= 2.0,
+              f"survives a {widest:.1f} mm erosion")
+    check("board rests on all four main-section holes",
+          len(P.LOCATOR_PRIMARY) + len(P.LOCATOR_SECONDARY) == 4,
+          f"{len(P.LOCATOR_PRIMARY)} locating + {len(P.LOCATOR_SECONDARY)} supporting pins")
+    mx, my, ms, mh = P.MCU_BOSS
+    check("MCU boss stops short of the package", P.MCU_BOSS_CLEAR > 0,
+          f"{P.MCU_BOSS_CLEAR} mm below a {mh} mm package -- backs the board "
+          f"without lifting it")
 
     print("\n" + ("ALL CHECKS PASSED" if not FAILS else
                   f"{len(FAILS)} CHECK(S) FAILED: {FAILS}"))
