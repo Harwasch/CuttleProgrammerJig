@@ -220,8 +220,40 @@ def main():
     dw = P.PEDESTAL_X[1] - P.PEDESTAL_X[0]
     dd = P.PEDESTAL_Y[1] - P.PEDESTAL_Y[0]
     check("clamp deck is big enough for the clamp footprint",
-          dw >= P.CLAMP_BASE_W and dd >= P.CLAMP_SLOT_DY + 12,
+          dw >= P.CLAMP_BASE_W and dd >= P.CLAMP_HOLE_DY + 12,
           f"deck {dw:.0f} x {dd:.0f} mm, clamp body {P.CLAMP_BASE_W:.0f} mm wide")
+
+    # ------------------------------------------------- clamp heat-set mount --
+    print("\nclamp mount, M3 heat-set inserts")
+    ins = jig.clamp_insert_xy()
+    check("four insert positions", len(ins) == 4, f"{len(ins)} holes")
+    for x, y in ins:
+        inside = (P.PEDESTAL_X[0] + P.STAND_WALL < x < P.PEDESTAL_X[1] - P.STAND_WALL
+                  and P.PEDESTAL_Y[0] + 3 < y < P.PEDESTAL_Y[1] - 3)
+        check(f"insert ({x:7.2f},{y:7.2f}) is on the deck", inside,
+              f"deck spans x {P.PEDESTAL_X[0]:.0f}..{P.PEDESTAL_X[1]:.0f}, "
+              f"y {P.PEDESTAL_Y[0]:.0f}..{P.PEDESTAL_Y[1]:.0f}")
+    solid_under = P.TOWER_TOP_Z - P.INSERT_M3_HOLE_DEPTH - P.TOWER_SOLID_Z
+    check("material left under a blind insert hole", solid_under >= 3.0,
+          f"{solid_under:.1f} mm of solid below the hole")
+    check("hole is deeper than the insert",
+          P.INSERT_M3_HOLE_DEPTH > P.INSERT_M3_H,
+          f"{P.INSERT_M3_HOLE_DEPTH} mm hole for a {P.INSERT_M3_H} mm insert")
+    check("hole diameter suits the insert knurl", 3.85 <= P.INSERT_M3_HOLE_D <= 4.15,
+          f"O{P.INSERT_M3_HOLE_D} mm, between the 3.9 tip and 4.5 knurl")
+    # the spindle must land on the cover's dimple, not just somewhere on it
+    dim_x = sum(p[0] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    dim_y = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    near_row = max(y for _, y in ins)
+    land_y = near_row + P.CLAMP_SPINDLE_TO_ROW
+    land_x = sum(x for x, _ in ins) / len(ins)
+    check("spindle lands on the cover dimple",
+          abs(land_y - dim_y) < 0.5 and abs(land_x - dim_x) < P.COVER_DIMPLE_R,
+          f"spindle at ({land_x:.2f},{land_y:.2f}), dimple at ({dim_x:.2f},{dim_y:.2f})")
+    check("clamp body clears the guide posts in X",
+          all(abs(land_x - px) > P.CLAMP_BASE_W / 2 or abs(py) > 12
+              for px, py in P.POST_XY),
+          f"clamp centred on x={land_x:.1f}, {P.CLAMP_BASE_W:.0f} mm wide")
 
     # --------------------------------------------------------------- force --
     print("\nforce budget")

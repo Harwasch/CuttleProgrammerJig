@@ -9,13 +9,42 @@
 | 1 | `fit_gauge` print | calibration coupon, printed once |
 | 4 | Compression spring, 0.6 × 7 mm | from the kit — **select on solid height, not free length: it must stack shorter than 10 mm** |
 | 1 | GH-201 horizontal toggle clamp | 75 × 25 × 17 mm, 27 kg |
-| 4 | M4 × 16 screw + M4 nut | toggle clamp to the tower, nuts in the slide channels |
+| 4 | M3 heat-set insert, 4 mm | Kadrick-type, Ø4.5 knurl / Ø3.9 tip — into the clamp deck |
+| 4 | M3 × 12 socket screw | toggle clamp to the deck |
 | 4 | M3 × 12 screw | base plate to stand |
 | 1 | small zip tie | loom strain relief at the exit |
 | — | 7 × silicone wire, **30 AWG** | probe tails; see Wiring |
 
-Print all four parts in **PETG or ABS**, not PLA — the jig sits under
-continuous spring load and PLA creeps.
+Print everything in **PETG**, not PLA — the jig sits under continuous spring
+load and PLA creeps, and PETG takes heat-set inserts well. ABS also works if
+you would rather, but nothing here needs its temperature resistance.
+
+### Which printer
+
+Every part fits every machine you have — the largest is the stand at
+137 × 83 × 50 mm, well inside an X1C's 256 mm bed, let alone an H2D or H2C. So
+build volume is not the deciding factor; two other things are.
+
+**Keep the fit gauge and the base plate on the same machine, nozzle and
+filament.** The gauge exists to measure *that machine's* hole shrinkage. Print
+the gauge on one printer and the plate on another and the calibration is void —
+this matters more than which printer you pick.
+
+**The base plate is the only part where precision matters.** It carries the
+seven Ø1.0 mm probe bores and the four locator pins, and it is small (42 cm³).
+Put it on whichever machine you trust most for small features, at 0.12–0.15 mm
+layers. If you have a **0.2 mm nozzle** for any of them, this is the one part
+worth the extra time — a Ø1.0 × 9 mm bore is right at the limit for a 0.4 mm
+nozzle, and it is the residual risk called out below.
+
+**The stand is 124 cm³ of plain walls** with no precision requirement. Put it
+on whichever machine is fastest or most convenient; it is roughly 7 hours
+either way.
+
+I have no basis for ranking the H2C, H2D and X1C against each other for
+dimensional accuracy on features this small, so I would not choose between them
+on that — pick the one whose profile you have most confidence in, and let the
+fit gauge tell you what it actually produces.
 
 ## Print settings
 
@@ -63,10 +92,13 @@ budget, and `verify.py` prints that sum.
    each sleeve tail, then wick a drop of thin CA into each sleeve/bore joint
    from below to lock it. Label the wires as you go.
 4. Screw the `base_plate` down onto the `stand` with four M3.
-5. Slide two M4 nuts into each channel in the tower's back face, then bolt the
-   GH-201 down through the deck slots. The slots give 8 mm of fore-and-aft
-   travel on top of the clamp's own, so set the reach here and the height on
-   the spindle.
+5. Melt four **M3 heat-set inserts** into the blind holes in the clamp deck,
+   then bolt the GH-201 down with M3 × 12. Set your iron to about 240 °C for
+   PETG, press each insert in square, and let it set before loading it.
+
+   The holes are Ø4.0 × 5 mm deep for a 4 mm insert, with 5 mm of solid tower
+   underneath. Load is only about 4 N per bolt, so this is far stronger than it
+   needs to be — the inserts are for a clean repeatable thread, not strength.
 6. Drop a spring into each of the four base counterbores, over the guide
    posts, then lower the `nest` onto the posts. It passes over the four locator
    pins without touching them.
@@ -137,6 +169,7 @@ pins is far more headroom than the few tens of mA the MCU needs.
 | Probe tips proud of the platform, clamp open | 3.35 mm |
 | Nest lift, clamp open | 3.0 mm |
 | Spring solid height (compress one fully) | under 10 mm |
+| Spindle lands in the cover dimple | within Ø8 mm |
 | Clamp force at close | roughly 1.6 kg |
 
 ## Tuning
@@ -161,9 +194,16 @@ sleeve enters the gauge cleanly but will not seat fully in the plate, that is
 the cause — shorten `PIN_BORE_L` to 6 mm and reprint the plate; the cost is
 0.007 mm of extra probe tilt, which is nothing against the 0.444 mm budget.
 
-**`CLAMP_SLOT_DX` / `CLAMP_SLOT_DY` (15.9 / 11.1 mm)** — the GH-201 mounting
-slot pattern, read off the product drawing rather than measured. Check yours
-with calipers before printing the riser.
+**`CLAMP_SPINDLE_TO_ROW` (24.6 mm) — measure this before printing the stand.**
+It is the distance from the spindle axis to the nearer of the two mounting-hole
+rows, and it decides where the spindle lands on the cover. Fixed inserts have no
+fore-and-aft slop to absorb an error, unlike the sliding nuts they replaced.
+24.6 mm is inferred from the drawing (19.6 mm spindle-to-plate plus about 5 mm
+plate-edge-to-hole), **not measured**, so check it. `verify.py` reports where
+the spindle would land against the cover's Ø8 mm dimple.
+
+**`CLAMP_HOLE_DX` / `CLAMP_HOLE_DY` (15.9 / 11.1 mm)** — the GH-201 mounting
+hole pattern, also read off the drawing. Check with calipers.
 
 `TOWER_TOP_Z` (20 mm) sets how high the clamp sits. Reach is adjustable — the
 deck slots give 8 mm on top of the clamp's own, and the spindle covers height —

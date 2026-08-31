@@ -164,14 +164,7 @@ COVER_MARGIN         =   4.0
 COVER_TAB_L          =   9.0   # lift-off grip tab
 COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip, at the pad centroid
 
-# -------------------------------------------------------- clamp interface ---
-# GH-201 horizontal toggle clamp: 75 x 25 x 17 mm, 6 x 4 mm mounting slots.
-# The riser is a separate part on a slotted rail so it can be tuned to the
-# clamp you actually have without reprinting the base.
-RAIL_SLOT_D          =   4.4   # M4 clearance
-# The clamp tower is part of the stand. Its deck slots are longer than the
-# clamp's own so the GH-201 still slides fore and aft; height comes from the
-# spindle. Changing TOWER_TOP_Z means reprinting the stand.
+# --------------------------------------------------------------- geometry ---
 # The stand is one full rectangle, not an L: the board bay and the clamp bay
 # share their whole width, and the open compartments either side of the tower
 # double as a parts tray.
@@ -182,15 +175,27 @@ PEDESTAL_Y           = (-56.0, -21.0)
 # Ribs must miss the loom run: the probe cluster is at x -32..-17 and the exit
 # at x +/-10, so a rib at x -4 sat right in the path.
 RIB_X                = [-46.0, 20.0]  # internal ribs, vertical walls only
-CLAMP_SLOT_TRAVEL    =   8.0   # extra length on the deck slots, for reach trim
-NUT_CHANNEL_W        =   7.2   # M4 nut across flats, sliding fit
-NUT_CHANNEL_H        =   3.6
-RAIL_SLOT_D          =   4.4   # M4 clearance
-CLAMP_BASE_W         =  25.0   # GH-201 body, checked against the riser deck
+
+# -------------------------------------------------------- clamp interface ---
+# GH-201 horizontal toggle clamp: 75 x 25 x 17 mm, mounting holes on a
+# 15.9 x 11.1 mm pattern, spindle pressing DOWN from its mounting plane.
+CLAMP_BASE_W         =  25.0   # body width, checked against the deck
 CLAMP_BASE_L         =  75.0
-CLAMP_SLOT_L         =   6.0
-CLAMP_SLOT_W         =   4.0
-CLAMP_SLOT_DX        =  15.9   # <-- measure yours; drawing shows 15.9 x 11.1
-CLAMP_SLOT_DY        =  11.1
+CLAMP_HOLE_DX        =  15.9   # <-- measure yours; these are off the drawing
+CLAMP_HOLE_DY        =  11.1
+
+# It bolts into M3 heat-set inserts, not nuts in a channel. Kadrick M3 measure
+# 4.5 mm across the knurl and 3.9 mm at the tip, so a 4.0 mm blind hole -- the
+# usual "between the two diameters" rule. Load is about 4 N per bolt, so the
+# shortest plentiful insert in the kit is far more than enough.
+INSERT_M3_H          =   4.0   # insert length
+INSERT_M3_HOLE_D     =   4.0   # blind hole diameter
+INSERT_M3_HOLE_DEPTH =   5.0   # 1 mm deeper than the insert, for displaced plastic
+
+# Fixed inserts give up the fore-and-aft trim the slots allowed, so the mount
+# position has to be right first time. MEASURE THIS on your clamp: spindle axis
+# to the nearer of the two mounting-hole rows. 24.6 mm is read off the drawing
+# (19.6 mm spindle-to-plate plus about 5 mm plate-edge-to-hole), not measured.
+CLAMP_SPINDLE_TO_ROW =  24.6
 
 # ------------------------------------------------------------ printing -----
