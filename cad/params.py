@@ -26,10 +26,21 @@ RECEPT_LEN           = 17.5    # R50-2S overall length
 RECEPT_BODY_D        = 0.86    # sleeve body diameter
 RECEPT_HEAD_D        = 0.98    # sleeve head diameter
 RECEPT_HEAD_L        = 2.5     # head length
-PIN_BORE_D           = 0.85    # PRINTED pilot -> ream/drill to 0.90 mm
-PIN_BORE_L           = 6.0     # precision bore length that holds the sleeve
-PIN_HEAD_BORE_D      = 1.05    # counterbore for the sleeve head
-PIN_CLEAR_D          = 1.8     # loose clearance below the precision bore
+
+# Probe bores are printed to final size -- no drilling. FDM renders a small
+# vertical hole undersize, by an amount that depends on your printer, nozzle,
+# material and speed, so PIN_BORE_D is a MODELLED diameter to be calibrated
+# once against the fit gauge (cad/out/fit_gauge.stl). Print the gauge, find
+# the hole the sleeve just pushes into, set that number here, print the plate.
+# 1.00 is a typical starting point: most 0.4 mm-nozzle profiles render it
+# around 0.86-0.92 mm.
+PIN_BORE_D           = 1.00
+PIN_BORE_L           = 9.0     # bore length holding the sleeve; longer is
+                               # better, it is what limits sleeve tilt
+PIN_LEAD_D           = 1.40    # short lead-in at the top, eases insertion
+PIN_LEAD_L           = 1.20
+PIN_CLEAR_D          = 2.20    # loose clearance below the bore
+GAUGE_BORES          = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 
 # --------------------------------------------------------------- travel -----
 TRAVEL               = 3.00    # nest lift: rest -> hard stop
@@ -70,13 +81,29 @@ COVER_PAD_R          =   1.60  # hold-down contact pad radius
 COVER_PAD_H          =   1.80  # standoff; tallest top part under the cover is 1.29 mm
 
 # --------------------------------------------------------- board locators ---
-LOCATOR_D            = 2.05    # short pins on the nest, into the 2.2 mm holes
-LOCATOR_H            = 3.00    # height above the PCB seat
-LOCATOR_HOLES        = ["MH1", "MH4"]     # diagonal pair, best angular control
+# All four main-section holes are used. Two locate (full size, diagonal pair,
+# 29.6 mm apart for the least angular error); the other two are undersize so
+# they cannot fight the first two if print and board tolerances disagree.
+LOCATOR_D            = 2.05    # primary pins, into the board's 2.2 mm holes
+LOCATOR_D2           = 1.80    # secondary pins, engage without constraining
+LOCATOR_H            = 3.00    # height above the seat
+LOCATOR_PRIMARY      = ["MH1", "MH4"]
+LOCATOR_SECONDARY    = ["MH2", "MH3"]
+SEAT_BOSSES          = ["MH1", "MH2", "MH3", "MH4", "MH5", "MH6"]
+BOSS_R_MAX           = 4.00    # capped; each boss also respects its own
+BOSS_PART_CLEAR      = 0.30    # clearance to the nearest bottom-side part
+
+# The nest seats the board on those bosses and on the bare sections, and drops
+# everything else clear in ONE pocket -- no ribs threaded between components.
+NEST_RECESS          = 3.00    # pocket depth below the seat
+BARE_SECTIONS        = [(-56.0, -33.2), (15.4, 41.0)]   # tab+flexes: no parts
+MCU_BOSS             = (-27.26, 2.92, 4.40, 0.855)      # x, y, size, part height
+MCU_BOSS_CLEAR       = 0.10    # boss stops just short of the package
+PROBE_CLEAR_D        = 4.00    # holes for the base's probe islands
 
 # ------------------------------------------------------------- nest plate ---
 NEST_X               = (-58.0, 55.0)
-NEST_Y               = ( -14.0, 14.0)
+NEST_Y               = ( -15.0, 15.0)
 NEST_FILLET          =   3.0
 
 # ------------------------------------------------------------- base plate ---
@@ -84,7 +111,7 @@ NEST_FILLET          =   3.0
 # the posts and the pin platform pointing up, so nothing overhangs.
 PLATE_Z_BOTTOM       =  -8.0
 PLATE_X              = (-64.0, 61.0)
-PLATE_Y              = ( -20.0, 20.0)
+PLATE_Y              = ( -21.0, 21.0)
 PLATE_FILLET         =   4.0
 MOUNT_SCREW_D        =   3.4   # M3 clearance, base plate -> stand
 MOUNT_SCREW_XY       = [(-59.0, -15.5), (-59.0, 15.5), (56.0, -15.5), (56.0, 15.5)]
@@ -96,6 +123,7 @@ STAND_Z_BOTTOM       = -30.0   # 22 mm of open space under the plate for wiring
 STAND_WALL           =   4.0
 TOWER_TOP_Z          =  12.0   # clamp mounting deck
 TOWER_DECK_T         =   5.0
+TOWER_SOLID_Z        =   2.0   # tower is hollow below this, solid above
 WIRE_EXIT_Z          = (-26.0, -12.0)   # loom exit, on the far side from the clamp
 TIE_BAR_W            =   4.0           # vertical divider, to tie the loom against
 WIRE_SLOT_W          =  20.0
@@ -115,8 +143,14 @@ RAIL_SLOT_D          =   4.4   # M4 clearance
 # The clamp tower is part of the stand. Its deck slots are longer than the
 # clamp's own so the GH-201 still slides fore and aft; height comes from the
 # spindle. Changing TOWER_TOP_Z means reprinting the stand.
+# The stand is one full rectangle, not an L: the board bay and the clamp bay
+# share their whole width, and the open compartments either side of the tower
+# double as a parts tray.
+STAND_X              = (-70.0, 67.0)
+STAND_Y              = (-56.0, 27.0)
 PEDESTAL_X           = (-44.0,  -6.0)
-PEDESTAL_Y           = (-52.0, -20.0)
+PEDESTAL_Y           = (-56.0, -21.0)
+RIB_X                = [-46.0, -4.0]   # internal ribs, vertical walls only
 CLAMP_SLOT_TRAVEL    =   8.0   # extra length on the deck slots, for reach trim
 NUT_CHANNEL_W        =   7.2   # M4 nut across flats, sliding fit
 NUT_CHANNEL_H        =   3.6
