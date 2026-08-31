@@ -46,7 +46,10 @@ GAUGE_BORES          = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
 TRAVEL               = 3.00    # nest lift: rest -> hard stop
 NEST_T               = 6.00    # PCB seat height above the nest's own underside
 NEST_LIP             = 0.80    # raised lip forming the drop-in board recess
-NEST_LIP_CLEAR       = 0.35    # gap between the lip and the board outline
+NEST_LIP_CLEAR       = 0.50    # gap between the lip and the board outline. The
+                               # board is held by base-plate pins while the
+                               # recess moves with the nest, so this has to
+                               # clear the nest's own play as well.
 
 # Derived: top of the pin platform, above the hard-stop plateau.
 Z_PIN_TOP            = NEST_T + COMPRESSION - PIN_PROTRUSION      # = 3.85
@@ -67,7 +70,11 @@ POST_XY              = [(-38.0, 8.5), (-38.0, -8.5),
 SPRING_WIRE_D        = 0.60    # 0.6 x 7 mm compression spring from the kit
 SPRING_OD            = 7.00
 SPRING_ACTIVE_COILS  = 9       # estimate for a 15 mm free length
-SPRING_FREE          = 15.00   # free length
+SPRING_FREE          = 15.00   # free length -- but SELECT ON SOLID HEIGHT: it
+                               # must stack shorter than BASE_SPRING_DEPTH +
+                               # NEST_SPRING_DEPTH (10 mm) or the nest never
+                               # reaches its stop. A 15-coil spring solids at
+                               # 10.2 mm and would not work.
 SPRING_POCKET_D      = 7.60
 BASE_SPRING_DEPTH    = 7.00    # counterbore in the base
 NEST_SPRING_DEPTH    = 3.00    # counterbore in the nest underside
@@ -79,14 +86,30 @@ COVER_PADS           = [(-28.30, -6.05), (-27.55, -1.30), (-27.30, 6.95),
                         (-14.80,  7.95), (-14.30, -8.05)]
 COVER_PAD_R          =   1.60  # hold-down contact pad radius
 COVER_PAD_H          =   1.80  # standoff; tallest top part under the cover is 1.29 mm
+COVER_LEADIN         =   1.00  # chamfer on the guide holes: only 5.8 mm of the
+                               # cover rides 24 mm of reach, so it needs a lead-in
 
 # --------------------------------------------------------- board locators ---
+# The pins stand on the BASE PLATE, not on the nest, and pass up through
+# clearance holes in the nest into the board. That deletes two links from the
+# chain that sets where a probe tip lands -- the nest's own position on the
+# guide posts, and the print accuracy of a pin mounted on it -- because the
+# board then registers directly to the part that holds the probes. Worst case
+# over the whole chain drops from 0.674 mm to 0.344 mm against a 0.6 mm pad.
+#
+# They were on the nest while they also had to carry the springs; the springs
+# moved to the Ø5 guide posts, so the pins now carry no load and a slender
+# printed pin is fine.
+#
 # All four main-section holes are used. Two locate (full size, diagonal pair,
 # 29.6 mm apart for the least angular error); the other two are undersize so
 # they cannot fight the first two if print and board tolerances disagree.
-LOCATOR_D            = 2.05    # primary pins, into the board's 2.2 mm holes
+LOCATOR_D            = 2.10    # primary pins, into the board's 2.2 mm holes
 LOCATOR_D2           = 1.80    # secondary pins, engage without constraining
-LOCATOR_H            = 3.00    # height above the seat
+LOCATOR_TOP_Z        = 12.00   # pin top; board underside is 9.0 at rest, so
+                               # this keeps 3 mm engaged with the clamp open
+LOCATOR_NEST_CLEAR   = 0.35    # radial clearance in the nest's pass-through,
+                               # covering the nest's own play on the posts
 LOCATOR_PRIMARY      = ["MH1", "MH4"]
 LOCATOR_SECONDARY    = ["MH2", "MH3"]
 SEAT_BOSSES          = ["MH1", "MH2", "MH3", "MH4", "MH5", "MH6"]
@@ -121,9 +144,15 @@ MOUNT_SCREW_XY       = [(-59.0, -15.5), (-59.0, 15.5), (56.0, -15.5), (56.0, 15.
 # are the same walls, not a bolt-on bracket.
 STAND_Z_BOTTOM       = -30.0   # 22 mm of open space under the plate for wiring
 STAND_WALL           =   4.0
-TOWER_TOP_Z          =  12.0   # clamp mounting deck
+# The GH-201's spindle sits at its mounting plane and only adjusts DOWNWARD, so
+# the deck has to be ABOVE the surface it presses. The cover top is 13.43 mm
+# closed and 16.43 mm open; 20 mm puts the spindle 6.6 mm down from its plane,
+# mid-range on a 15 mm assembly, and leaves the arm around 27 mm -- clear of
+# both the open cover and the 16 mm guide posts.
+TOWER_TOP_Z          =  20.0   # clamp mounting deck
 TOWER_DECK_T         =   5.0
-TOWER_SOLID_Z        =   2.0   # tower is hollow below this, solid above
+TOWER_SOLID_Z        =  10.0   # tower is hollow below this, solid above; keeps
+                               # the solid band ~10 mm as the deck rises
 WIRE_EXIT_Z          = (-26.0, -12.0)   # loom exit, on the far side from the clamp
 TIE_BAR_W            =   4.0           # vertical divider, to tie the loom against
 WIRE_SLOT_W          =  20.0
@@ -150,7 +179,9 @@ STAND_X              = (-70.0, 67.0)
 STAND_Y              = (-56.0, 27.0)
 PEDESTAL_X           = (-44.0,  -6.0)
 PEDESTAL_Y           = (-56.0, -21.0)
-RIB_X                = [-46.0, -4.0]   # internal ribs, vertical walls only
+# Ribs must miss the loom run: the probe cluster is at x -32..-17 and the exit
+# at x +/-10, so a rib at x -4 sat right in the path.
+RIB_X                = [-46.0, 20.0]  # internal ribs, vertical walls only
 CLAMP_SLOT_TRAVEL    =   8.0   # extra length on the deck slots, for reach trim
 NUT_CHANNEL_W        =   7.2   # M4 nut across flats, sliding fit
 NUT_CHANNEL_H        =   3.6

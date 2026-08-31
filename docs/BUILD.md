@@ -7,7 +7,7 @@
 | 7 | P50-B1 spring test probe | Ø0.68 mm tube, 16.35 mm, 30° spear tip, 75 g |
 | 7 | R50-2S receptacle | Ø0.86 mm body, 17.5 mm, solder slot |
 | 1 | `fit_gauge` print | calibration coupon, printed once |
-| 4 | Compression spring, 0.6 × 7 mm, **15 mm free length** | from the assortment kit |
+| 4 | Compression spring, 0.6 × 7 mm | from the kit — **select on solid height, not free length: it must stack shorter than 10 mm** |
 | 1 | GH-201 horizontal toggle clamp | 75 × 25 × 17 mm, 27 kg |
 | 4 | M4 × 16 screw + M4 nut | toggle clamp to the tower, nuts in the slide channels |
 | 4 | M3 × 12 screw | base plate to stand |
@@ -68,15 +68,25 @@ budget, and `verify.py` prints that sum.
    travel on top of the clamp's own, so set the reach here and the height on
    the spindle.
 6. Drop a spring into each of the four base counterbores, over the guide
-   posts, then lower the `nest` onto the posts. The board then seats on six
-   bosses — one at each of its own mounting holes — and on the SWD tab and both
-   flex necks, which carry no bottom-side parts at all. Four pins engage the
-   main-section holes: MH1 and MH4 at Ø2.05 locate the board, MH2 and MH3 at
-   Ø1.80 support without fighting them.
+   posts, then lower the `nest` onto the posts. It passes over the four locator
+   pins without touching them.
+7. The board drops onto the **base plate's** locator pins, through the nest, and
+   seats on six nest bosses — one at each of its own mounting holes — plus the
+   SWD tab and both flex necks, which carry no bottom-side parts at all. MH1 and
+   MH4 at Ø2.10 locate it; MH2 and MH3 at Ø1.80 engage without fighting them.
+
+   The pins are on the base plate rather than the nest so the board registers
+   directly to the part that holds the probes. That removes the nest's own play
+   on the guide posts from the chain that decides where a probe tip lands —
+   worst case 0.674 mm down to 0.444 mm, against 0.5 mm of usable pad.
 7. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
    stand 3.35 mm proud of the platform.
-8. Adjust the clamp spindle so that, closed, it seats in the dimple on the
-   cover and drives the nest fully onto the hard stop — no more.
+8. Adjust the clamp spindle. It presses **downward** from the clamp's mounting
+   plane, and the deck sits at z = 20 mm against a cover top of 13.4 mm, so the
+   spindle should end up about 6.6 mm proud — mid-range on its thread. Set it so
+   the handle closes with a firm over-centre snap and the nest is driven fully
+   onto its hard stop, then confirm with the continuity check below. If the
+   handle closes limply, the spindle is too high and the nest is not bottoming.
 
 ## Wiring
 
@@ -126,6 +136,7 @@ pins is far more headroom than the few tens of mA the MCU needs.
 | Continuity with the clamp open | open circuit |
 | Probe tips proud of the platform, clamp open | 3.35 mm |
 | Nest lift, clamp open | 3.0 mm |
+| Spring solid height (compress one fully) | under 10 mm |
 | Clamp force at close | roughly 1.6 kg |
 
 ## Tuning
@@ -143,11 +154,18 @@ say, 3.6 mm, the platform simply drops 0.25 mm.
 **`PIN_BORE_D` (1.00 mm)** — calibrated from the fit gauge, as above. This is
 the one number that depends on your printer rather than on the parts.
 
+**Known residual risk, not designed out:** the probe bore is Ø1.0 × 9 mm, a 9:1
+aspect vertical hole, which is what FDM is least good at. The gauge calibrates
+diameter but will not catch a bore that comes out tapered down its depth. If a
+sleeve enters the gauge cleanly but will not seat fully in the plate, that is
+the cause — shorten `PIN_BORE_L` to 6 mm and reprint the plate; the cost is
+0.007 mm of extra probe tilt, which is nothing against the 0.444 mm budget.
+
 **`CLAMP_SLOT_DX` / `CLAMP_SLOT_DY` (15.9 / 11.1 mm)** — the GH-201 mounting
 slot pattern, read off the product drawing rather than measured. Check yours
 with calipers before printing the riser.
 
-`TOWER_TOP_Z` (12 mm) sets how high the clamp sits. Reach is adjustable — the
+`TOWER_TOP_Z` (20 mm) sets how high the clamp sits. Reach is adjustable — the
 deck slots give 8 mm on top of the clamp's own, and the spindle covers height —
 but the deck height itself is now part of the stand, so changing it means
 reprinting the stand.

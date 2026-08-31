@@ -38,7 +38,10 @@ for n in P.SEAT_BOSSES:
     pin = (P.LOCATOR_D if n in P.LOCATOR_PRIMARY else
            P.LOCATOR_D2 if n in P.LOCATOR_SECONDARY else 0)
     if pin:
-        ax.add_patch(plt.Circle((x, y), pin / 2, fc="#111", zorder=9))
+        # the pin belongs to the base plate; the nest only clears it
+        ax.add_patch(plt.Circle((x, y), pin / 2 + P.LOCATOR_NEST_CLEAR, fc="white",
+                                ec="#111", lw=1.0, ls=(0, (3, 2)), zorder=9))
+        ax.add_patch(plt.Circle((x, y), pin / 2, fc="#111", zorder=10))
     lab = f"{n}\nO{G.boss_radius(n) * 2:.1f}" + (f" pin O{pin:.2f}" if pin else " no pin")
     ax.annotate(lab, (x, y + G.boss_radius(n) + .4), fontsize=6.5, ha="center",
                 va="bottom", zorder=9)
@@ -46,7 +49,8 @@ for x, y in P.POST_XY:
     ax.add_patch(plt.Circle((x, y), P.POST_HOLE_D / 2, fc="white", ec="b", lw=1, zorder=7))
 ax.set_aspect("equal"); ax.grid(alpha=.3, lw=.3)
 ax.set_title("nest — BLUE seat bosses at the mounting holes, GREEN bare sections "
-             "(no bottom-side parts at all), WHITE single relief pocket, "
-             "GREY components, RED probe clearance")
+             "(no bottom-side parts at all), WHITE single relief pocket, GREY "
+             "components, RED probe clearance.  BLACK pins belong to the base "
+             "plate; dashed = the nest's pass-through")
 plt.tight_layout(); plt.savefig(os.path.join(OUT, "nest_plan.png"), dpi=100)
 print("wrote nest_plan.png")
