@@ -107,6 +107,13 @@ def main():
     check("cover vs PCBA top-side parts", v < 0.02, f"{v:.4f} mm3 overlap")
     check("cover vs nest", vol(cov.intersect(nest)) < 0.02,
           f"{vol(cov.intersect(nest)):.4f} mm3")
+    # the cover has to clear the guide posts it rides AND the locator pins that
+    # now come up from the base plate through the board
+    check("cover vs base plate, clamp closed", vol(cov.intersect(base)) < 0.02,
+          f"{vol(cov.intersect(base)):.4f} mm3 overlap")
+    cov_up = Pos(0, 0, seat + P.TRAVEL + board_t) * cover
+    check("cover vs base plate, clamp open", vol(cov_up.intersect(base)) < 0.02,
+          f"{vol(cov_up.intersect(base)):.4f} mm3 overlap")
     for x, y in P.COVER_PADS:
         clr = min([bx.distance(Point(x, y)) for bx in G.part_boxes("top")])
         edge = G.OUTLINE.exterior.distance(Point(x, y))
@@ -125,10 +132,22 @@ def main():
                       ("clamp tower vs PCBA", stand, board)]:
         v = vol(a.intersect(b2))
         check(nm, v < 0.02, f"{v:.4f} mm3 overlap")
-    ct = seat + P.TRAVEL + board_t + P.COVER_PAD_H + P.COVER_T
-    check("clamp deck sits below the cover top",
-          P.TOWER_TOP_Z <= ct,
-          f"deck {P.TOWER_TOP_Z:.2f} mm, cover top when open {ct:.2f} mm")
+    # The GH-201's spindle sits at its mounting plane and only adjusts DOWNWARD,
+    # so the deck has to be ABOVE the surface it presses -- not below it.
+    ct_closed = seat + board_t + P.COVER_PAD_H + P.COVER_T
+    ct_open = ct_closed + P.TRAVEL
+    drop = P.TOWER_TOP_Z - ct_closed
+    check("clamp deck is above the surface it presses", drop > 0,
+          f"deck {P.TOWER_TOP_Z:.2f} mm, cover top closed {ct_closed:.2f} mm "
+          f"-> spindle drops {drop:+.2f} mm")
+    check("spindle drop is mid-range, not at an extreme", 3.0 <= drop <= 12.0,
+          f"{drop:.2f} mm below the mounting plane, on a 15 mm assembly")
+    check("clamp arm clears the cover when open",
+          P.TOWER_TOP_Z + 7.0 > ct_open + 2.0,
+          f"arm about {P.TOWER_TOP_Z + 7.0:.1f} mm vs open cover top {ct_open:.2f} mm")
+    check("clamp arm clears the guide posts",
+          P.TOWER_TOP_Z + 7.0 > P.POST_TOP_Z,
+          f"arm about {P.TOWER_TOP_Z + 7.0:.1f} mm vs posts {P.POST_TOP_Z:.1f} mm")
     check("stand is one piece", len(stand.solids()) == 1,
           f"{len(stand.solids())} solid(s)")
 
@@ -172,24 +191,69 @@ def main():
     check("lead-in is wider than the bore", P.PIN_LEAD_D > P.PIN_BORE_D,
           f"lead {P.PIN_LEAD_D} mm into bore {P.PIN_BORE_D} mm")
 
-    # Where the tip lands, worst case, if the calibrated bore ends up 0.04 mm
-    # over the sleeve: translation plus the tilt that engagement allows.
-    slop = 0.04
-    trans = slop / 2
-    tilt = (slop / P.PIN_BORE_L) * P.PIN_PROTRUSION
-    budget = 1.2 / 2 - 0.25          # pad radius less the spear tip radius
-    check("probe placement fits inside the pad",
-          trans + tilt + 0.15 + 0.10 < budget,
-          f"{trans:.3f} translation + {tilt:.3f} tilt + 0.15 board + 0.10 print "
-          f"= {trans + tilt + 0.25:.2f} mm vs {budget:.2f} mm allowed")
+    # Full chain from the board's pad to the probe tip, stated link by link.
+    # With the locators on the base plate the board registers straight to the
+    # part that holds the probes, so the nest contributes nothing: no
+    # nest-on-posts play and no nest-mounted-pin print error.
+    pin_clear = (2.2 - P.LOCATOR_D) / 2
+    arm = max(math.hypot(t["x"], t["y"]) for t in G.TEST_POINTS)
+    span = math.dist(G.HOLES[P.LOCATOR_PRIMARY[0]], G.HOLES[P.LOCATOR_PRIMARY[1]])
+    links = [
+        ("PCB hole to pad, fab",              0.050),
+        ("board on pin, clearance",           pin_clear),
+        (f"yaw from it, at {arm:.0f} mm",     math.atan(2 * pin_clear / span) * arm),
+        ("base plate pin position, print",    0.100),
+        ("base plate bore position, print",   0.100),
+        ("sleeve in a bore 0.04 over",        0.020),
+        ("sleeve tilt over the bore",         (0.04 / P.PIN_BORE_L) * P.PIN_PROTRUSION),
+    ]
+    worst = sum(v for _, v in links)
+    rss = math.sqrt(sum(v * v for _, v in links))
+    budget = 1.2 / 2 - 0.10          # pad radius, less a contact margin
+    for nm3, v in links:
+        print(f"        {nm3:36s} {v:6.3f} mm")
+    check("probe placement fits inside the pad, worst case", worst <= budget,
+          f"worst {worst:.3f} mm, RSS {rss:.3f} mm, budget {budget:.3f} mm")
     check("cover pads stand off further than the tallest top-side part",
           P.COVER_PAD_H > P.PART_H_TOP_MAIN,
           f"{P.COVER_PAD_H} mm standoff vs {P.PART_H_TOP_MAIN} mm part")
     dw = P.PEDESTAL_X[1] - P.PEDESTAL_X[0]
     dd = P.PEDESTAL_Y[1] - P.PEDESTAL_Y[0]
     check("clamp deck is big enough for the clamp footprint",
-          dw >= P.CLAMP_BASE_W and dd >= P.CLAMP_SLOT_DY + 12,
+          dw >= P.CLAMP_BASE_W and dd >= P.CLAMP_HOLE_DY + 12,
           f"deck {dw:.0f} x {dd:.0f} mm, clamp body {P.CLAMP_BASE_W:.0f} mm wide")
+
+    # ------------------------------------------------- clamp heat-set mount --
+    print("\nclamp mount, M3 heat-set inserts")
+    ins = jig.clamp_insert_xy()
+    check("four insert positions", len(ins) == 4, f"{len(ins)} holes")
+    for x, y in ins:
+        inside = (P.PEDESTAL_X[0] + P.STAND_WALL < x < P.PEDESTAL_X[1] - P.STAND_WALL
+                  and P.PEDESTAL_Y[0] + 3 < y < P.PEDESTAL_Y[1] - 3)
+        check(f"insert ({x:7.2f},{y:7.2f}) is on the deck", inside,
+              f"deck spans x {P.PEDESTAL_X[0]:.0f}..{P.PEDESTAL_X[1]:.0f}, "
+              f"y {P.PEDESTAL_Y[0]:.0f}..{P.PEDESTAL_Y[1]:.0f}")
+    solid_under = P.TOWER_TOP_Z - P.INSERT_M3_HOLE_DEPTH - P.TOWER_SOLID_Z
+    check("material left under a blind insert hole", solid_under >= 3.0,
+          f"{solid_under:.1f} mm of solid below the hole")
+    check("hole is deeper than the insert",
+          P.INSERT_M3_HOLE_DEPTH > P.INSERT_M3_H,
+          f"{P.INSERT_M3_HOLE_DEPTH} mm hole for a {P.INSERT_M3_H} mm insert")
+    check("hole diameter suits the insert knurl", 3.85 <= P.INSERT_M3_HOLE_D <= 4.15,
+          f"O{P.INSERT_M3_HOLE_D} mm, between the 3.9 tip and 4.5 knurl")
+    # the spindle must land on the cover's dimple, not just somewhere on it
+    dim_x = sum(p[0] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    dim_y = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    near_row = max(y for _, y in ins)
+    land_y = near_row + P.CLAMP_SPINDLE_TO_ROW
+    land_x = sum(x for x, _ in ins) / len(ins)
+    check("spindle lands on the cover dimple",
+          abs(land_y - dim_y) < 0.5 and abs(land_x - dim_x) < P.COVER_DIMPLE_R,
+          f"spindle at ({land_x:.2f},{land_y:.2f}), dimple at ({dim_x:.2f},{dim_y:.2f})")
+    check("clamp body clears the guide posts in X",
+          all(abs(land_x - px) > P.CLAMP_BASE_W / 2 or abs(py) > 12
+              for px, py in P.POST_XY),
+          f"clamp centred on x={land_x:.1f}, {P.CLAMP_BASE_W:.0f} mm wide")
 
     # --------------------------------------------------------------- force --
     print("\nforce budget")
@@ -240,6 +304,30 @@ def main():
     check("board rests on all four main-section holes",
           len(P.LOCATOR_PRIMARY) + len(P.LOCATOR_SECONDARY) == 4,
           f"{len(P.LOCATOR_PRIMARY)} locating + {len(P.LOCATOR_SECONDARY)} supporting pins")
+    # the pins must belong to the base plate, and the nest must merely clear them
+    for grp, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
+                     (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
+        for name in grp:
+            x, y = G.HOLES[name]
+            core = Pos(x, y, P.LOCATOR_TOP_Z - 1.5) * extrude(
+                Circle(dia / 2 - 0.2), amount=1.0)
+            got = vol(base.intersect(core))
+            check(f"{name} pin stands on the base plate",
+                  got > 0.9 * core.volume,
+                  f"{100 * got / core.volume:.0f}% solid at z="
+                  f"{P.LOCATOR_TOP_Z - 1.0:.1f} mm")
+            through = Pos(x, y, -0.1) * extrude(
+                Circle(dia / 2 + 0.05), amount=P.NEST_T + P.NEST_LIP + 0.2)
+            check(f"{name} passes through the nest cleanly",
+                  vol(nest.intersect(through)) < 0.02,
+                  f"{vol(nest.intersect(through)):.4f} mm3 in the way")
+    engage = (P.LOCATOR_TOP_Z - (P.NEST_T + P.TRAVEL))
+    check("pins still engage the board with the clamp open", engage >= 2.5,
+          f"{engage:.2f} mm of pin above the board underside at rest")
+    check("nest recess cannot fight the base-plate pins",
+          P.NEST_LIP_CLEAR > (P.POST_HOLE_D - P.POST_D) / 2 + 0.15,
+          f"recess clearance {P.NEST_LIP_CLEAR:.2f} mm vs nest play "
+          f"{(P.POST_HOLE_D - P.POST_D) / 2:.2f} mm")
     mx, my, ms, mh = P.MCU_BOSS
     check("MCU boss stops short of the package", P.MCU_BOSS_CLEAR > 0,
           f"{P.MCU_BOSS_CLEAR} mm below a {mh} mm package -- backs the board "

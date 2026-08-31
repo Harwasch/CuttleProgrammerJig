@@ -61,6 +61,29 @@ def build_base_plate():
         part -= p * Pos(0, 0, z0 - 0.1) * extrude(
             Circle(P.PIN_CLEAR_D / 2), amount=clr_top - z0 + 0.1)
 
+    # Board locators. These stand on the base plate, not the nest, so the board
+    # registers straight to the part that carries the probes; the nest just
+    # passes them through. They carry no load -- the guide posts take the
+    # springs -- so a slender printed pin is adequate.
+    pins = []
+    for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
+                       (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
+        for name in names:
+            x, y = G.HOLES[name]
+            part += Pos(x, y) * extrude(Circle(dia / 2), amount=P.LOCATOR_TOP_Z)
+            pins.append((x, y))
+    # lead-in on the pin tops, selected by position -- the guide posts are
+    # taller, so a plain "highest circular edge" pick would grab those instead
+    # NB: Edge.center() on a circular edge returns a point ON the circle, not
+    # its axis -- arc_center is what identifies the pin.
+    tips = [e for e in part.edges().filter_by(GeomType.CIRCLE)
+            if abs(e.arc_center.Z - P.LOCATOR_TOP_Z) < 0.01
+            and any(abs(e.arc_center.X - x) < 0.01 and abs(e.arc_center.Y - y) < 0.01
+                    for x, y in pins)]
+    if len(tips) != len(pins):
+        raise RuntimeError(f"expected {len(pins)} pin tips, selected {len(tips)}")
+    part = chamfer(tips, 0.4)
+
     for x, y in P.MOUNT_SCREW_XY:
         part -= Pos(x, y, z0 - 0.1) * extrude(
             Circle(P.MOUNT_SCREW_D / 2), amount=-z0 + 0.2)
@@ -77,6 +100,9 @@ def build_nest():
     threaded between components and nothing thin to print. A boss under the MCU
     stops just short of the package: it backs up the board against probe force
     without lifting it off its seat.
+
+    The board's locating pins stand on the base plate and pass through this
+    part; the nest positions nothing.
     """
     top = P.NEST_T + P.NEST_LIP
     part = extrude(rrect(P.NEST_X, P.NEST_Y, P.NEST_FILLET), amount=top)
@@ -99,13 +125,14 @@ def build_nest():
         part -= Pos(x, y) * extrude(Circle(P.SPRING_POCKET_D / 2),
                                     amount=P.NEST_SPRING_DEPTH)
 
-    # All four main-section holes take a pin. Two locate; the other two are
-    # undersize so they engage without fighting the first pair.
+    # The locator pins belong to the base plate now, so the nest only has to let
+    # them through. Clearance covers the nest's own play on the guide posts.
     for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
                        (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
         for name in names:
             x, y = G.HOLES[name]
-            part += Pos(x, y, P.NEST_T) * extrude(Circle(dia / 2), amount=P.LOCATOR_H)
+            part -= Pos(x, y, -0.1) * extrude(
+                Circle(dia / 2 + P.LOCATOR_NEST_CLEAR), amount=top + 0.2)
     return part
 
 
@@ -132,9 +159,17 @@ def build_cover():
     top = P.COVER_PAD_H + P.COVER_T
     part -= Pos(cxp, cyp, top) * Sphere(P.COVER_DIMPLE_R)
 
+    # Guide holes, chamfered both ends: only 5.8 mm of cover rides the posts
+    # against 24 mm of reach to the far pad, so it needs a lead-in to drop on
+    # cleanly rather than catching.
+    h = P.COVER_PAD_H + P.COVER_T
     for x, y in P.COVER_POSTS:
-        part -= Pos(x, y, -0.1) * extrude(Circle(P.POST_HOLE_D / 2),
-                                          amount=P.COVER_PAD_H + P.COVER_T + 0.2)
+        part -= Pos(x, y, -0.1) * extrude(Circle(P.POST_HOLE_D / 2), amount=h + 0.2)
+        c = P.COVER_LEADIN
+        part -= Pos(x, y, -0.01) * extrude(
+            Circle(P.POST_HOLE_D / 2 + c), amount=c, taper=45)
+        part -= Pos(x, y, h + 0.01) * extrude(
+            Circle(P.POST_HOLE_D / 2 + c), amount=-c, taper=45)
     # clearance for any nest locator pin that falls under the cover
     for name in P.LOCATOR_PRIMARY + P.LOCATOR_SECONDARY:
         x, y = G.HOLES[name]
@@ -146,6 +181,20 @@ def build_cover():
 
 
 
+def clamp_insert_xy():
+    """The four M3 insert positions on the clamp deck.
+
+    Derived from where the spindle has to land -- the dimple at the centroid of
+    the cover's contact pads -- worked back through the clamp's own geometry,
+    rather than simply centred on the deck.
+    """
+    dimple_y = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    near = dimple_y - P.CLAMP_SPINDLE_TO_ROW
+    cx = (P.PEDESTAL_X[0] + P.PEDESTAL_X[1]) / 2
+    return [(cx + sx * P.CLAMP_HOLE_DX / 2, near - sy * P.CLAMP_HOLE_DY)
+            for sx in (-1, 1) for sy in (0, 1)]
+
+
 # ------------------------------------------------------------------- stand --
 def build_stand():
     """One monolithic part, one full rectangular footprint.
@@ -155,6 +204,8 @@ def build_stand():
     lands on a bay wall that runs all the way to the bench rather than on
     cantilevered bosses; the clamp tower is solid up to a shallow nut channel;
     and the loom slot is split by a post so its top edge spans 8 mm, not 20.
+
+    The clamp bolts into M3 heat-set inserts in the deck.
     """
     z0, z1 = P.STAND_Z_BOTTOM, P.PLATE_Z_BOTTOM
     W = P.STAND_WALL
@@ -208,20 +259,12 @@ def build_stand():
     for sy in (P.PLATE_Y[1] - W / 2, P.STAND_Y[1] - W / 2):
         part += Pos(0, sy, zc) * Box(P.TIE_BAR_W, W, zh)
 
-    # clamp mounting: deck slots over a captive-nut channel open at the back
-    cx = (P.PEDESTAL_X[0] + P.PEDESTAL_X[1]) / 2
-    cy = (P.PEDESTAL_Y[0] + P.PEDESTAL_Y[1]) / 2
-    deck = P.TOWER_TOP_Z - P.TOWER_DECK_T
-    for sx in (-1, 1):
-        x = cx + sx * P.CLAMP_SLOT_DX / 2
-        for sy in (-1, 1):
-            part -= Pos(x, cy + sy * P.CLAMP_SLOT_DY / 2, deck - 0.1) * extrude(
-                SlotOverall(P.CLAMP_SLOT_W + P.CLAMP_SLOT_TRAVEL, P.RAIL_SLOT_D,
-                            rotation=90), amount=P.TOWER_DECK_T + 0.2)
-        y0 = P.PEDESTAL_Y[0] - 1.0
-        y1 = cy + P.CLAMP_SLOT_DY / 2 + (P.CLAMP_SLOT_W + P.CLAMP_SLOT_TRAVEL) / 2 + 2.0
-        part -= Pos(x, (y0 + y1) / 2, deck - P.NUT_CHANNEL_H / 2) * \
-            Box(P.NUT_CHANNEL_W, y1 - y0, P.NUT_CHANNEL_H)
+    # Clamp mounting: four blind holes for M3 heat-set inserts, placed so the
+    # spindle lands on the cover's dimple. Fixed inserts give up the trim the
+    # slots allowed, so CLAMP_SPINDLE_TO_ROW has to be measured, not assumed.
+    for x, y in clamp_insert_xy():
+        part -= Pos(x, y, P.TOWER_TOP_Z - P.INSERT_M3_HOLE_DEPTH) * extrude(
+            Circle(P.INSERT_M3_HOLE_D / 2), amount=P.INSERT_M3_HOLE_DEPTH + 0.1)
     return part
 
 

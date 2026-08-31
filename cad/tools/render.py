@@ -202,7 +202,7 @@ VIEWS = {
                         "tightest pair 4.3 mm apart",
                         (-24.7, -1.5, -11.0, 16.0)),
     "stand":           ([("stand", 0)], 34, 30,
-                        "stand - one rectangular footprint, walls and ribs only"),
+                        "stand - one rectangular footprint; the clamp tower is the same shell"),
     "stand_top":       ([("stand", 0)], 20, 62,
                         "stand from above - board bay, clamp tower, tie-off ribs"),
     "nest_top":        ([("nest", 0)], 30, 52,
@@ -234,7 +234,7 @@ LABELS = {
                 46 if t["y"] > 0 else -46) for t in _B["test_points"]],
     "probes": [((t["x"], t["y"], P.Z_PIN_TOP), t["net"], -46 if t["y"] > 0 else 46)
                for t in _B["test_points"]],
-    "exploded": [((-58, 0, -18), "stand", -40), ((-24, -36, -6), "clamp riser", 40),
+    "exploded": [((-58, 0, -18), "stand", -40), ((-24, -38, 2), "clamp tower", 40),
                  ((-58, 0, -4), "base plate", -34), ((-58, 0, 16), "nest", -34),
                  ((20, 0, 30 + P.NEST_T), "board", -38),
                  ((-24, 0, P.NEST_T + P.PCB_T + 42 + 5.8), "hold-down cover", -38)],

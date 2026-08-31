@@ -75,8 +75,8 @@ faces against the base plate.
 
 | Part | Print | Notes |
 |---|---|---|
-| `base_plate` | flat, posts up | The precision part: 7 probe bores, 4 guide posts, spring pockets |
-| `nest` | flat | Six seat bosses, one relief pocket, four locator pins |
+| `base_plate` | flat, posts up | The precision part: 7 probe bores, 4 guide posts, 4 board locator pins, spring pockets |
+| `nest` | flat | Six seat bosses, one relief pocket, pass-throughs for the locator pins |
 | `cover` | pads up | Hold-down; presses only on bare board |
 | `stand` | as modelled | One piece, one rectangular footprint: board bay, clamp tower, 22 mm of wiring space |
 | `fit_gauge` | flat | Calibration coupon; print once to set the probe bore size |
