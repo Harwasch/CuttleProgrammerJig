@@ -68,18 +68,29 @@ There is no drilling. The probe bores print to final size — but FDM renders a
 small vertical hole undersize by an amount specific to your printer, nozzle,
 material and speed, so you calibrate once:
 
-1. Print `fit_gauge.stl` (65 × 14 mm, about 15 minutes) in the **same material
-   and profile** you will use for the base plate. It has eight bores labelled
-   85 to 120, in hundredths of a millimetre.
+1. Print `fit_gauge.stl` (80 × 14 mm, about 20 minutes) in the **same material
+   and profile** you will use for the base plate. It has ten bores labelled
+   90 to 135, in hundredths of a millimetre.
 2. Try an R50 sleeve in each. You want the smallest hole it enters with firm
-   thumb pressure and does not rattle in.
+   thumb pressure and does not rattle in. The answer must have a bore that is
+   too tight below it **and** a bore that is visibly loose above it — if the
+   sleeve only enters the largest hole, the range has not bracketed your
+   printer and you need to shift `GAUGE_BORES` up and print again.
 3. Put that number in `PIN_BORE_D` in [`cad/params.py`](../cad/params.py) and
    run `python3 jig.py`.
 
-The default, 1.00, is a typical result for a 0.4 mm nozzle. The bore is 9 mm
-long on a 17.5 mm sleeve, so even a sloppy fit barely moves the tip: at 0.04 mm
-of play the probe lands within 0.28 mm of the pad centre against a 0.35 mm
-budget, and `verify.py` prints that sum.
+The value shipped here, **1.20**, is a measured result, not a default: on the
+machine and profile it was taken from, the sleeve entered the 120 bore and
+nothing smaller. That means the profile renders a small vertical hole about
+0.22 mm under nominal — a modelled Ø1.20 comes out near Ø0.98 and grips the
+sleeve head. That is more shrink than a typical PLA profile gives (0.08 to
+0.14 mm), so treat it as a starting point on any other machine, nozzle,
+material or speed and re-run the gauge.
+
+The bore is 9 mm long on a 17.5 mm sleeve, so even a sloppy fit barely moves
+the tip: at 0.04 mm of play the probe lands 0.035 mm off, inside a chain that
+totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
+`verify.py` prints every link in that chain.
 
 ## Assembly
 
@@ -184,15 +195,17 @@ number sets the platform height and therefore the probe compression; the
 verification script re-derives everything from it. If your probes measure,
 say, 3.6 mm, the platform simply drops 0.25 mm.
 
-**`PIN_BORE_D` (1.00 mm)** — calibrated from the fit gauge, as above. This is
-the one number that depends on your printer rather than on the parts.
+**`PIN_BORE_D` (1.20 mm)** — calibrated from the fit gauge, as above. This is
+the one number that depends on your printer rather than on the parts, and the
+only one you must re-measure if you change machine, nozzle or material.
 
-**Known residual risk, not designed out:** the probe bore is Ø1.0 × 9 mm, a 9:1
-aspect vertical hole, which is what FDM is least good at. The gauge calibrates
-diameter but will not catch a bore that comes out tapered down its depth. If a
-sleeve enters the gauge cleanly but will not seat fully in the plate, that is
-the cause — shorten `PIN_BORE_L` to 6 mm and reprint the plate; the cost is
-0.007 mm of extra probe tilt, which is nothing against the 0.444 mm budget.
+**Known residual risk, not designed out:** the probe bore is Ø1.2 × 9 mm, a
+7.5:1 aspect vertical hole, which is what FDM is least good at. The gauge
+calibrates diameter but will not catch a bore that comes out tapered down its
+depth. If a sleeve enters the gauge cleanly but will not seat fully in the
+plate, that is the cause — shorten `PIN_BORE_L` to 6 mm and reprint the
+plate; the cost is 0.007 mm of extra probe tilt, which is nothing against the
+0.444 mm budget.
 
 **`CLAMP_SPINDLE_TO_ROW` (24.6 mm) — measure this before printing the stand.**
 It is the distance from the spindle axis to the nearer of the two mounting-hole
