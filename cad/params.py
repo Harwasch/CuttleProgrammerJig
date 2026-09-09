@@ -32,15 +32,25 @@ RECEPT_HEAD_L        = 2.5     # head length
 # material and speed, so PIN_BORE_D is a MODELLED diameter to be calibrated
 # once against the fit gauge (cad/out/fit_gauge.stl). Print the gauge, find
 # the hole the sleeve just pushes into, set that number here, print the plate.
-# 1.00 is a typical starting point: most 0.4 mm-nozzle profiles render it
-# around 0.86-0.92 mm.
-PIN_BORE_D           = 1.00
+# 1.20 is the MEASURED result on this build: the sleeve entered the gauge's
+# 120 bore and nothing smaller, so the profile is rendering a small vertical
+# hole about 0.22 mm under nominal -- more shrink than the 0.08-0.14 mm a PLA
+# profile usually gives, which is normal for PETG. Recalibrate if you change
+# printer, nozzle, material or speed.
+PIN_BORE_D           = 1.20
 PIN_BORE_L           = 9.0     # bore length holding the sleeve; longer is
                                # better, it is what limits sleeve tilt
-PIN_LEAD_D           = 1.40    # short lead-in at the top, eases insertion
+PIN_LEAD_D           = 1.40    # short lead-in at the top, eases insertion.
+                               # Shrink is a roughly constant offset, so what
+                               # matters is the MODELLED step over the bore:
+                               # 0.20 mm here, printing ~1.18 over a 0.98 head.
 PIN_LEAD_L           = 1.20
 PIN_CLEAR_D          = 2.20    # loose clearance below the bore
-GAUGE_BORES          = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
+# The gauge must bracket the answer on BOTH sides -- a sleeve that only enters
+# the largest bore tells you nothing about whether that bore is a press fit or
+# already loose. 1.20 landed on the old top slot, so the range moved up.
+GAUGE_BORES          = [0.90, 0.95, 1.00, 1.05, 1.10,
+                        1.15, 1.20, 1.25, 1.30, 1.35]
 
 # --------------------------------------------------------------- travel -----
 TRAVEL               = 3.00    # nest lift: rest -> hard stop
