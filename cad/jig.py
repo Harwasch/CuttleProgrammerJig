@@ -39,7 +39,15 @@ def build_base_plate():
     # raised probe platform, then cut it back under every bottom-side part
     platform = extrude(G.sk(G.probe_islands()), amount=P.Z_PIN_TOP)
     for fp, zfloor in G.bottom_part_sweep():
-        platform -= extrude(G.sk(fp, Plane.XY.offset(zfloor)), amount=P.Z_PIN_TOP + 1)
+        cut = fp
+        if zfloor + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
+            # This part's underside clears the platform top, so it passes over
+            # the islands and they can keep their full collar. Cutting them
+            # anyway left 0.15 mm of wall on two bores and breached a third.
+            cut = fp.difference(G.probe_islands())
+        if cut.is_empty:
+            continue
+        platform -= extrude(G.sk(cut, Plane.XY.offset(zfloor)), amount=P.Z_PIN_TOP + 1)
     part += platform
 
     # guide posts, rising from the floor of their own spring pockets
@@ -56,12 +64,19 @@ def build_base_plate():
     for tp in G.TEST_POINTS:
         p = Pos(tp["x"], tp["y"])
         top = P.Z_PIN_TOP
-        part -= p * Pos(0, 0, top - P.PIN_LEAD_L) * extrude(
-            Circle(P.PIN_LEAD_D / 2), amount=P.PIN_LEAD_L + 0.1)
-        bore_top = top - P.PIN_LEAD_L
-        part -= p * Pos(0, 0, bore_top - P.PIN_BORE_L) * extrude(
-            Circle(P.PIN_BORE_D / 2), amount=P.PIN_BORE_L)
-        clr_top = bore_top - P.PIN_BORE_L
+        # mouth chamfer, then a counterbore exactly one head deep, then a bore
+        # sized for the BODY. The head cannot enter the body bore, so it bottoms
+        # flush with the platform instead of stopping wherever you stopped
+        # pushing.
+        part -= p * Pos(0, 0, top) * extrude(
+            Circle(P.PIN_BORE_D / 2 + P.PIN_MOUTH_CHAMFER),
+            amount=-P.PIN_MOUTH_CHAMFER, taper=45)
+        part -= p * Pos(0, 0, top - P.PIN_HEAD_BORE_L) * extrude(
+            Circle(P.PIN_BORE_D / 2), amount=P.PIN_HEAD_BORE_L + 0.01)
+        body_top = top - P.PIN_HEAD_BORE_L
+        part -= p * Pos(0, 0, body_top - P.PIN_BORE_L) * extrude(
+            Circle(P.PIN_BODY_BORE_D / 2), amount=P.PIN_BORE_L)
+        clr_top = body_top - P.PIN_BORE_L
         part -= p * Pos(0, 0, z0 - 0.1) * extrude(
             Circle(P.PIN_CLEAR_D / 2), amount=clr_top - z0 + 0.1)
 
@@ -180,7 +195,7 @@ def build_nest():
 def build_cover():
     xs = [x for x, _ in P.COVER_POSTS] + [p[0] for p in P.COVER_PADS]
     ys = [y for _, y in P.COVER_POSTS] + [p[1] for p in P.COVER_PADS]
-    xr = (min(xs) - P.COVER_MARGIN, max(xs) + P.COVER_MARGIN)
+    xr = (max(min(xs) - P.COVER_MARGIN, P.COVER_X_MIN), max(xs) + P.COVER_MARGIN)
     yr = (min(ys) - P.COVER_MARGIN, max(ys) + P.COVER_MARGIN)
 
     pads = unary_union([Point(x, y).buffer(P.COVER_PAD_R, G.ARC_SEGS) for x, y in P.COVER_PADS])
@@ -198,7 +213,10 @@ def build_cover():
     # centre and split the spring set 75/25, so the nest levered down.
     cxp, cyp = P.COVER_DIMPLE_XY
     top = P.COVER_PAD_H + P.COVER_T
-    part -= Pos(cxp, cyp, top) * Sphere(P.COVER_DIMPLE_R)
+    # raised so the sphere cuts only COVER_DIMPLE_DEPTH: centred ON the top face
+    # a Sphere(COVER_DIMPLE_R) reached the underside and left zero material
+    part -= Pos(cxp, cyp, top + P.COVER_DIMPLE_R - P.COVER_DIMPLE_DEPTH) * \
+        Sphere(P.COVER_DIMPLE_R)
 
     # Guide holes, chamfered both ends: only 5.8 mm of cover rides the posts
     # against 24 mm of reach to the far pad, so it needs a lead-in to drop on
@@ -293,9 +311,13 @@ def build_stand():
     cl = L + P.STLINK_HEADER_ROOM + P.STLINK_USB_ROOM
     cw = Wd + 2 * P.STLINK_CLEAR
     fz = z0 + P.STLINK_FLOOR_T
+    # Sized from the CASE. Taking cl (the cavity length, 127) put the ribs
+    # 127 mm apart around a 100 mm case -- 27 mm of slop in X, so they located
+    # nothing. The header and USB rooms are clearance at the ends, not case.
+    case_x = P.STLINK_X_CENTRE - cl / 2 + P.STLINK_HEADER_ROOM + L / 2
     for sx in (-1, 1):
         for sy in (-1, 1):
-            cx = P.STLINK_X_CENTRE + sx * cl / 2
+            cx = case_x + sx * (L + 2 * P.STLINK_CLEAR) / 2
             cy = P.STLINK_Y_CENTRE + sy * cw / 2
             rz = fz + P.STLINK_RIB_H / 2          # Box centres on its Pos
             part += Pos(cx + sx * 1.5, cy, rz) * Box(3.0, 14.0, P.STLINK_RIB_H)
@@ -321,15 +343,23 @@ def build_fit_gauge():
     PIN_BORE_D. That replaces drilling the plate afterwards.
     """
     n = len(P.GAUGE_BORES)
-    pitch, t = 7.5, P.PIN_BORE_L + 2.0
+    # The coupon must reproduce the feature it calibrates: a BLIND counterbore
+    # exactly one head deep, with the same mouth chamfer. It used to be an
+    # 11 mm through hole for a 9 mm application -- a deeper hole tapers more and
+    # reads tighter, biasing the one measurement the whole design hangs on.
+    pitch, t = 7.5, P.PIN_HEAD_BORE_L + 2.5
     w, d = n * pitch + 5.0, 14.0
     part = extrude(rrect((-w / 2, w / 2), (-d / 2, d / 2), 2.0), amount=t)
     for i, dia in enumerate(P.GAUGE_BORES):
         x = (i - (n - 1) / 2) * pitch
-        part -= Pos(x, 3.0, -0.1) * extrude(Circle(dia / 2), amount=t + 0.2)
-        # label in hundredths of a mm: 85, 90, ... 120
+        part -= Pos(x, 3.0, t) * extrude(
+            Circle(dia / 2 + P.PIN_MOUTH_CHAMFER),
+            amount=-P.PIN_MOUTH_CHAMFER, taper=45)
+        part -= Pos(x, 3.0, t - P.PIN_HEAD_BORE_L) * extrude(
+            Circle(dia / 2), amount=P.PIN_HEAD_BORE_L + 0.01)
+        # label in hundredths of a mm, matching GAUGE_BORES
         part -= Pos(x, -4.0, t - 0.6) * extrude(
-            Text(f"{round(dia * 100)}", font_size=3.4,
+            Text(f"{round(dia * 100)}", font_size=4.2,
                  align=(Align.CENTER, Align.CENTER)), amount=0.7)
     return part
 
