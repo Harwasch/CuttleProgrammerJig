@@ -68,14 +68,15 @@ lifting it off its seat. Nothing on the part is thinner than 3 mm.
 `python3 tools/render.py` regenerates all fifteen; `python3 tools/render.py top
 probes` does just those. The renderer is a small software z-buffer rasteriser
 (orthographic, backface-culled, 2x supersampled, with a depth-discontinuity
-outline pass) — a painter's-algorithm sort mis-orders the body's large flat
-faces against each other.
+outline pass) — a painter's-algorithm sort mis-orders the stand's large flat
+faces against the base plate.
 
 ## Parts
 
 | Part | Print | Notes |
 |---|---|---|
-| `body` | as modelled, deck up | Everything precise and everything structural in one part: 7 probe bores, 4 guide posts, 2 stepped board locators, 2 registration pins, spring pockets, board bay, clamp tower, wire bay and the ST-Link bay under it |
+| `base_plate` | flat, features up | The precision part, and the lid of the stand: 7 probe bores, 4 guide posts, 2 stepped board locators, 2 registration pins, spring pockets, and the clamp tower |
+| `stand` | as modelled | A plain open box. Its whole 137 × 83 × 40 mm interior is the ST-Link's |
 | `nest` | flat | Six seat bosses, one relief pocket, pass-throughs for the locator and registration pins |
 | `cover` | pads up | Hold-down; presses only on bare board, rides all four posts, pressed on the centre of the spring quad |
 | `fit_gauge` | flat | Calibration coupon; print once to set the probe bore size |

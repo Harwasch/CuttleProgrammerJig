@@ -59,7 +59,8 @@ def check(name, ok, detail=""):
 
 def main():
     print("building parts ...")
-    body, nest, cover = jig.build_body(), jig.build_nest(), jig.build_cover()
+    base, stand, nest, cover = (jig.build_base_plate(), jig.build_stand(),
+                                jig.build_nest(), jig.build_cover())
     seat = P.NEST_T                       # board underside, clamp closed
     if FULL:
         print("importing the full PCBA STEP (slow, exact) ...")
@@ -97,21 +98,21 @@ def main():
         probe = Pos(tp["x"], tp["y"], P.Z_PIN_TOP - depth) * extrude(
             Circle(P.PIN_BORE_D / 2 - 0.02), amount=depth)
         check(f"{tp['net']:8s} bore open through {depth:.1f} mm",
-              vol(body.intersect(probe)) < 0.02 * probe.volume,
-              f"{100 * vol(body.intersect(probe)) / probe.volume:.1f}% obstructed")
+              vol(base.intersect(probe)) < 0.02 * probe.volume,
+              f"{100 * vol(base.intersect(probe)) / probe.volume:.1f}% obstructed")
         # the platform must be solid in a collar outside the head counterbore
         ring = (Pos(tp["x"], tp["y"], P.Z_PIN_TOP - 0.4) * extrude(Circle(1.45), amount=0.35)
                 - Pos(tp["x"], tp["y"], P.Z_PIN_TOP - 0.5) * extrude(
                     Circle(P.PIN_LEAD_D / 2 + 0.10), amount=0.6))
-        got = vol(body.intersect(ring))
+        got = vol(base.intersect(ring))
         check(f"{tp['net']:8s} platform collar is solid", got > 0.55 * ring.volume,
               f"{100 * got / ring.volume:.0f}% solid at z={P.Z_PIN_TOP:.2f}")
 
     # ------------------------------------------- interference, clamp closed --
     print("\ninterference, clamp closed (nest on the hard stop)")
-    for nm, a, bshape in [("PCBA vs body", body, board),
+    for nm, a, bshape in [("PCBA vs base plate", base, board),
                           ("PCBA vs nest", nest, board),
-                          ("nest vs body", body, nest)]:
+                          ("nest vs base plate", base, nest)]:
         v = vol(a.intersect(bshape))
         check(nm, v < 0.02, f"{v:.4f} mm3 overlap")
 
@@ -119,10 +120,10 @@ def main():
     print("\ninterference, clamp open (nest lifted by TRAVEL)")
     nest_up = Pos(0, 0, P.TRAVEL) * nest
     board_up = Pos(0, 0, P.TRAVEL) * board
-    check("nest vs body, lifted", vol(body.intersect(nest_up)) < 0.02,
-          f"{vol(body.intersect(nest_up)):.4f} mm3")
-    check("PCBA vs body, lifted", vol(body.intersect(board_up)) < 0.02,
-          f"{vol(body.intersect(board_up)):.4f} mm3")
+    check("nest vs base plate, lifted", vol(base.intersect(nest_up)) < 0.02,
+          f"{vol(base.intersect(nest_up)):.4f} mm3")
+    check("PCBA vs base plate, lifted", vol(base.intersect(board_up)) < 0.02,
+          f"{vol(base.intersect(board_up)):.4f} mm3")
 
     # ----------------------------------------------------------- hold-down --
     print("\nhold-down cover")
@@ -133,11 +134,11 @@ def main():
           f"{vol(cov.intersect(nest)):.4f} mm3")
     # the cover has to clear the guide posts it rides AND the locator pins that
     # now come up from the base plate through the board
-    check("cover vs body, clamp closed", vol(cov.intersect(body)) < 0.02,
-          f"{vol(cov.intersect(body)):.4f} mm3 overlap")
+    check("cover vs base plate, clamp closed", vol(cov.intersect(base)) < 0.02,
+          f"{vol(cov.intersect(base)):.4f} mm3 overlap")
     cov_up = Pos(0, 0, seat + P.TRAVEL + board_t) * cover
-    check("cover vs body, clamp open", vol(cov_up.intersect(body)) < 0.02,
-          f"{vol(cov_up.intersect(body)):.4f} mm3 overlap")
+    check("cover vs base plate, clamp open", vol(cov_up.intersect(base)) < 0.02,
+          f"{vol(cov_up.intersect(base)):.4f} mm3 overlap")
     for x, y in P.COVER_PADS:
         clr = min([bx.distance(Point(x, y)) for bx in G.part_boxes("top")])
         edge = G.OUTLINE.exterior.distance(Point(x, y))
@@ -149,9 +150,10 @@ def main():
     print("\nbody and clamp tower")
     cov_open = Pos(0, 0, seat + P.TRAVEL + board_t) * cover
     nest_open = Pos(0, 0, P.TRAVEL) * nest
-    for nm, a, b2 in [("clamp tower vs nest, clamp open", body, nest_open),
-                      ("clamp tower vs cover, clamp open", body, cov_open),
-                      ("clamp tower vs PCBA", body, board)]:
+    for nm, a, b2 in [("clamp tower vs nest, clamp open", base, nest_open),
+                      ("clamp tower vs cover, clamp open", base, cov_open),
+                      ("clamp tower vs PCBA", base, board),
+                      ("base plate vs stand", base, stand)]:
         v = vol(a.intersect(b2))
         check(nm, v < 0.02, f"{v:.4f} mm3 overlap")
     # The GH-201's spindle sits at its mounting plane and only adjusts DOWNWARD,
@@ -170,8 +172,14 @@ def main():
     check("clamp arm clears the guide posts",
           P.TOWER_TOP_Z + 7.0 > P.POST_TOP_Z,
           f"arm about {P.TOWER_TOP_Z + 7.0:.1f} mm vs posts {P.POST_TOP_Z:.1f} mm")
-    check("body is one piece", len(body.solids()) == 1,
-          f"{len(body.solids())} solid(s)")
+    check("stand is one piece", len(stand.solids()) == 1,
+          f"{len(stand.solids())} solid(s)")
+    check("base plate is one piece", len(base.solids()) == 1,
+          f"{len(base.solids())} solid(s)")
+    check("clamp tower rides on the plate, not the stand",
+          vol(base.intersect(Pos(sum(P.PEDESTAL_X)/2, sum(P.PEDESTAL_Y)/2,
+                                 P.TOWER_TOP_Z - 1.0) * Box(4, 4, 1.0))) > 15.0,
+          "the whole clamp loop closes inside one part")
 
     # ------------------------------------------------------ wiring access --
     print("\nwiring space and ST-Link bay")
@@ -187,58 +195,70 @@ def main():
     check("sleeve pitch workable with a fine iron tip", pitch >= 3.0,
           f"tightest pair {pitch:.2f} mm apart")
     # nothing may block the space directly under a sleeve
-    # You solder with the ST-Link OUT, so the working space is the whole bay
-    # down to its floor. Nothing structural may sit under a tail.
+    # With the plate off the stand, the tails are free-standing stubs on a flat
+    # bench -- which is the whole reason the plate is a separate part again.
     for tp in G.TEST_POINTS:
-        col = Pos(tp["x"], tp["y"], P.STLINK_BAY_Z) * extrude(
-            Circle(2.0), amount=P.PLATE_Z_BOTTOM - P.STLINK_BAY_Z - 0.1)
-        v = vol(body.intersect(col))
+        col = Pos(tp["x"], tp["y"], P.PLATE_Z_BOTTOM - 30.0) * extrude(
+            Circle(2.0), amount=30.0 - 0.1)
+        v = vol(base.intersect(col))
         check(f"{tp['net']:8s} solder access is clear", v < 0.02,
-              f"{v:.4f} mm3 in a {P.PLATE_Z_BOTTOM - P.STLINK_BAY_Z:.0f} mm column")
+              f"{v:.4f} mm3 below the plate over 30 mm")
 
     # ---------------------------------------------------------- ST-Link bay --
     print("\nST-Link bay")
-    sl, sw, sh = P.STLINK_BODY
+    L, Wd, H = P.STLINK_CASE
     c = P.STLINK_CLEAR
-    case = Pos(P.STLINK_X0 + sl / 2, 0, P.STLINK_BAY_Z + sh / 2) * Box(sl, sw, sh)
-    check("case fits the bay without fouling it", vol(body.intersect(case)) < 0.02,
-          f"{vol(body.intersect(case)):.4f} mm3 overlap, "
-          f"{sl:.0f} x {sw:.0f} x {sh:.0f} mm case")
-    inner_w = (P.PLATE_Y[1] - P.STAND_WALL) * 2
-    check("bay is wide enough for the case", inner_w >= sw + 2 * c,
-          f"{inner_w:.0f} mm between bay walls for a {sw:.0f} mm case")
-    # fitting is not the same as being able to get it in: sweep the case from
-    # its home position out past the far wall and require the path to be clear
-    swept = Pos(P.STLINK_X0 + sl / 2 + 60.0, 0, P.STLINK_BAY_Z + sh / 2) * \
-        Box(sl + 120.0, sw, sh)
-    check("case has a clear slide-in path", vol(body.intersect(swept)) < 0.02,
-          f"{vol(body.intersect(swept)):.4f} mm3 in the way over "
-          f"{sl + 120.0:.0f} mm of travel")
-    check("case slides in from the +X end and its USB reaches daylight",
-          P.STLINK_X0 + sl + c >= P.PLATE_X[1] - P.STAND_WALL,
-          f"case ends at x={P.STLINK_X0 + sl:.0f}, bay wall at "
-          f"x={P.PLATE_X[1] - P.STAND_WALL:.0f}")
-    # the 20-pin header end must be the end nearest the probe cluster
-    cluster_x = sum(t["x"] for t in G.TEST_POINTS) / len(G.TEST_POINTS)
-    check("20-pin header end faces the probe cluster",
-          abs(P.STLINK_X0 - cluster_x) < abs(P.STLINK_X0 + sl - cluster_x),
-          f"header at x={P.STLINK_X0:.0f}, cluster centre x={cluster_x:.1f}, "
-          f"USB at x={P.STLINK_X0 + sl:.0f}")
-    # and it must not touch the probe tails once fitted
+    cl, cw, ch = L + P.STLINK_HEADER_ROOM + P.STLINK_USB_ROOM, Wd + 2 * c, H + 2 * c
+    fz = P.STAND_Z_BOTTOM + P.STLINK_FLOOR_T
+    cavity = Pos(P.STLINK_X_CENTRE, P.STLINK_Y_CENTRE, P.STLINK_TOP_Z - ch / 2) * \
+        Box(cl, cw, ch)
+    check("cavity is clear of the stand", vol(stand.intersect(cavity)) < 0.02,
+          f"{vol(stand.intersect(cavity)):.4f} mm3 in a "
+          f"{cl:.0f} x {cw:.0f} x {ch:.0f} mm cavity")
+    check("cavity sits on the floor", P.STLINK_TOP_Z - ch >= fz - 0.01,
+          f"case bottom z={P.STLINK_TOP_Z - ch:.1f}, floor top z={fz:.1f}")
+    check("cavity is inside the stand walls",
+          P.STLINK_X_CENTRE - cl / 2 >= P.STAND_X[0] + P.STAND_WALL and
+          P.STLINK_X_CENTRE + cl / 2 <= P.STAND_X[1] - P.STAND_WALL and
+          P.STLINK_Y_CENTRE - cw / 2 >= P.STAND_Y[0] + P.STAND_WALL and
+          P.STLINK_Y_CENTRE + cw / 2 <= P.STAND_Y[1] - P.STAND_WALL,
+          f"x {P.STLINK_X_CENTRE-cl/2:+.0f}..{P.STLINK_X_CENTRE+cl/2:+.0f}, "
+          f"y {P.STLINK_Y_CENTRE-cw/2:+.0f}..{P.STLINK_Y_CENTRE+cw/2:+.0f} inside "
+          f"x {P.STAND_X[0]+P.STAND_WALL:+.0f}..{P.STAND_X[1]-P.STAND_WALL:+.0f}, "
+          f"y {P.STAND_Y[0]+P.STAND_WALL:+.0f}..{P.STAND_Y[1]-P.STAND_WALL:+.0f}")
+    for x, y in P.MOUNT_SCREW_XY:
+        clear = (abs(x - P.STLINK_X_CENTRE) > cl / 2 + P.MOUNT_BOSS_R or
+                 abs(y - P.STLINK_Y_CENTRE) > cw / 2 + P.MOUNT_BOSS_R)
+        check(f"lid boss ({x:+6.1f},{y:+6.1f}) clears the cavity", clear)
+    # the locating ribs must actually stand proud of the floor, not be half
+    # buried in it -- Box centres on its Pos, which is easy to get wrong
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            rx = P.STLINK_X_CENTRE + sx * (cl / 2 + 1.5)
+            ry = P.STLINK_Y_CENTRE + sy * cw / 2
+            probe = Pos(rx, ry, fz + P.STLINK_RIB_H - 0.3) * Box(2.0, 6.0, 0.4)
+            got = vol(stand.intersect(probe))
+            check(f"locating rib ({rx:+6.1f},{ry:+6.1f}) stands proud",
+                  got > 0.8 * probe.volume,
+                  f"{100*got/probe.volume:.0f}% solid at "
+                  f"{P.STLINK_RIB_H - 0.3:.1f} mm above the floor")
+    # the USB cable must have a way out
+    usb = Pos(P.STAND_X[1], 0, P.STLINK_TOP_Z - ch / 2) * \
+        Box(3 * P.STAND_WALL, P.STLINK_USB_W - 1, P.STLINK_USB_H - 1)
+    check("USB opening goes right through the +X wall",
+          vol(stand.intersect(usb)) < 0.02,
+          f"{P.STLINK_USB_W:.0f} x {P.STLINK_USB_H:.0f} mm, "
+          f"{vol(stand.intersect(usb)):.4f} mm3 in the way")
+
+    # the case must not foul the probe tails once the lid is on
     tail_z = P.Z_PIN_TOP - P.RECEPT_LEN
-    gap = tail_z - (P.STLINK_BAY_Z + sh)
-    check("fitted case clears the probe tails", gap >= 1.0,
-          f"tails reach z={tail_z:.2f}, case top z={P.STLINK_BAY_Z + sh:.1f}"
-          f" -> {gap:.2f} mm")
-    check("corbel is narrower than the case, so it cannot lift out",
-          2 * (P.PLATE_Y[1] - P.STAND_WALL - P.DECK_CORBEL) < sw,
-          f"corbel opening {2*(P.PLATE_Y[1]-P.STAND_WALL-P.DECK_CORBEL):.0f} mm"
-          f" vs {sw:.0f} mm case")
-    area = P.WIRE_SLOT_W * (P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0])
-    need = len(G.TEST_POINTS) * 1.4 ** 2
-    check("loom exit is big enough", area >= 4 * need,
-          f"{P.WIRE_SLOT_W:.0f} x {P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]:.0f} mm "
-          f"= {area:.0f} mm2 for 7 wires")
+    check("fitted case clears the probe tails", tail_z - P.STLINK_TOP_Z >= 1.0,
+          f"tails reach z={tail_z:.2f}, cavity ceiling z={P.STLINK_TOP_Z:.1f}"
+          f" -> {tail_z - P.STLINK_TOP_Z:.2f} mm")
+    check("case drops in from above before the lid goes on",
+          P.STLINK_TOP_Z < P.PLATE_Z_BOTTOM,
+          f"nothing overhangs it: open from z={P.STLINK_TOP_Z:.0f} up to the lid "
+          f"at z={P.PLATE_Z_BOTTOM:.0f}")
 
     # ------------------------------------------------------ probe hardware --
     print("\nprobe hardware fit")
@@ -267,8 +287,8 @@ def main():
         ("PCB hole to pad, fab",              0.050),
         ("board on pin, clearance",           pin_clear),
         (f"yaw from it, at {arm:.0f} mm",     math.atan(2 * pin_clear / span) * arm),
-        ("deck pin position, print",          0.100),
-        ("deck bore position, print",         0.100),
+        ("base plate pin position, print",    0.100),
+        ("base plate bore position, print",   0.100),
         ("sleeve in a bore 0.04 over",        0.020),
         ("sleeve tilt over the bore",         (0.04 / P.PIN_BORE_L) * P.PIN_PROTRUSION),
     ]
@@ -347,8 +367,8 @@ def main():
     # Evaluated in each part's PRINT orientation, not its assembly orientation:
     # the cover is printed pads-up, so its body underside is on the bed.
     print("\nprintability (in the print orientation)")
-    for nm, shape, flip in [("body", body, False), ("nest", nest, False),
-                            ("cover", cover, True)]:
+    for nm, shape, flip in [("base_plate", base, False), ("stand", stand, False),
+                            ("nest", nest, False), ("cover", cover, True)]:
         oriented = Rot(180, 0, 0) * shape if flip else shape
         bed_z = oriented.bounding_box().min.Z
         flats = [f for f in oriented.faces().filter_by(GeomType.PLANE)
@@ -386,13 +406,13 @@ def main():
     check("two locating pins fully constrain the board",
           len(P.LOCATOR_PRIMARY) == 2,
           f"{len(P.LOCATOR_PRIMARY)} pins, {P.LOCATOR_SECONDARY or 'no'} secondary")
-    # the pins belong to the deck; the nest must merely clear them
+    # the pins belong to the base plate; the nest must merely clear them
     for name in P.LOCATOR_PRIMARY:
         x, y = G.HOLES[name]
         core = Pos(x, y, P.LOCATOR_TOP_Z - 2.0) * extrude(
             Circle(P.LOCATOR_D / 2 - 0.2), amount=1.0)
-        got = vol(body.intersect(core))
-        check(f"{name} pin stands on the deck", got > 0.9 * core.volume,
+        got = vol(base.intersect(core))
+        check(f"{name} pin stands on the base plate", got > 0.9 * core.volume,
               f"{100 * got / core.volume:.0f}% solid at z="
               f"{P.LOCATOR_TOP_Z - 1.5:.1f} mm")
         through = Pos(x, y, -0.1) * extrude(
@@ -430,7 +450,7 @@ def main():
     for i, (x, y) in enumerate(P.REG_XY):
         core = Pos(x, y, P.REG_PIN_CYL_Z - 1.5) * extrude(
             Circle(P.REG_PIN_D / 2 - 0.2), amount=1.0)
-        got = vol(body.intersect(core))
+        got = vol(base.intersect(core))
         check(f"register pin {i+1} stands on the base plate", got > 0.9 * core.volume,
               f"{100 * got / core.volume:.0f}% solid at ({x:+.1f},{y:+.1f})")
         hole = Pos(x, y, -0.1) * extrude(
