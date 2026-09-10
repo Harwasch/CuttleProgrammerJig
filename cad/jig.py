@@ -1,16 +1,20 @@
 """Cuttle CANServo_Driver pogo programming jig.
 
-Four printed parts:
-  base_plate  precision part -- 7 probe bores, 4 guide posts, spring pockets
-  stand       one piece: open frame under the plate plus the clamp tower
+Three printed parts:
+  body        deck and stand fused: 7 probe bores, 4 guide posts, 2 stepped
+              board locators, 2 registration pins, the clamp tower, the wire
+              bay and the ST-Link bay beneath it
   nest        floating board carrier, rides the posts on springs
-  cover       hold-down that presses only on bare board, guided by two posts
+  cover       hold-down that presses only on bare board, guided by all four
+              posts and pressed on the centre of the post/spring quad
+
+plus fit_gauge, a calibration coupon that is printed once and thrown away.
 
 Run:  python3 jig.py            -> writes STEP + STL into cad/out/
 """
 import os
 from build123d import *
-from shapely.geometry import Point
+from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
 import params as P
@@ -61,32 +65,30 @@ def build_base_plate():
         part -= p * Pos(0, 0, z0 - 0.1) * extrude(
             Circle(P.PIN_CLEAR_D / 2), amount=clr_top - z0 + 0.1)
 
-    # Board locators. These stand on the base plate, not the nest, so the board
-    # registers straight to the part that carries the probes; the nest just
-    # passes them through. They carry no load -- the guide posts take the
-    # springs -- so a slender printed pin is adequate.
-    pins = []
-    for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
-                       (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
-        for name in names:
-            x, y = G.HOLES[name]
-            part += Pos(x, y) * extrude(Circle(dia / 2), amount=P.LOCATOR_TOP_Z)
-            pins.append((x, y))
-    # lead-in on the pin tops, selected by position -- the guide posts are
-    # taller, so a plain "highest circular edge" pick would grab those instead
-    # NB: Edge.center() on a circular edge returns a point ON the circle, not
-    # its axis -- arc_center is what identifies the pin.
-    tips = [e for e in part.edges().filter_by(GeomType.CIRCLE)
-            if abs(e.arc_center.Z - P.LOCATOR_TOP_Z) < 0.01
-            and any(abs(e.arc_center.X - x) < 0.01 and abs(e.arc_center.Y - y) < 0.01
-                    for x, y in pins)]
-    if len(tips) != len(pins):
-        raise RuntimeError(f"expected {len(pins)} pin tips, selected {len(tips)}")
-    part = chamfer(tips, 0.4)
+    # Nest registration. The four guide posts are deliberately loose now -- four
+    # posts in four holes is over-constrained and binds on any print-scaling
+    # difference -- so the nest is located by exactly two features instead: a
+    # round pin at the primary and the same pin in a slot at the secondary.
+    # That is kinematically exact, so scale error slides the slot along its own
+    # axis rather than jamming the pair. Ø4 x 6.5 mm is 1.6:1, not the 5.7:1 of
+    # the board locators that used to stand here.
+    for x, y in P.REG_XY:
+        part += Pos(x, y) * extrude(Circle(P.REG_PIN_D / 2), amount=P.REG_PIN_CYL_Z)
+        part += Pos(x, y, P.REG_PIN_CYL_Z) * extrude(
+            Circle(P.REG_PIN_D / 2),
+            amount=P.REG_PIN_TOP_Z - P.REG_PIN_CYL_Z, taper=30)
 
-    for x, y in P.MOUNT_SCREW_XY:
-        part -= Pos(x, y, z0 - 0.1) * extrude(
-            Circle(P.MOUNT_SCREW_D / 2), amount=-z0 + 0.2)
+    # Board locators, stepped. Everything below the seat -- which the board can
+    # never reach, because the nest bottoms there -- is Ø3.00, so only the last
+    # 6 mm stands as Ø2.10. See LOCATOR_SHANK_D for why that matters.
+    for name in P.LOCATOR_PRIMARY:
+        x, y = G.HOLES[name]
+        part += Pos(x, y) * extrude(Circle(P.LOCATOR_SHANK_D / 2), amount=P.NEST_T)
+        part += Pos(x, y, P.NEST_T) * extrude(
+            Circle(P.LOCATOR_D / 2), amount=P.LOCATOR_TOP_Z - P.NEST_T - 0.6)
+        part += Pos(x, y, P.LOCATOR_TOP_Z - 0.6) * extrude(
+            Circle(P.LOCATOR_D / 2), amount=0.6, taper=30)
+
     return part
 
 
@@ -102,7 +104,9 @@ def build_nest():
     without lifting it off its seat.
 
     The board's locating pins stand on the base plate and pass through this
-    part; the nest positions nothing.
+    part, so the board registers straight to the part that holds the probes.
+    The nest is itself registered to the base by two dedicated pins rather than
+    by the springs' guide posts, which are now deliberately loose.
     """
     top = P.NEST_T + P.NEST_LIP
     part = extrude(rrect(P.NEST_X, P.NEST_Y, P.NEST_FILLET), amount=top)
@@ -125,14 +129,25 @@ def build_nest():
         part -= Pos(x, y) * extrude(Circle(P.SPRING_POCKET_D / 2),
                                     amount=P.NEST_SPRING_DEPTH)
 
-    # The locator pins belong to the base plate now, so the nest only has to let
-    # them through. Clearance covers the nest's own play on the guide posts.
-    for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
-                       (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
-        for name in names:
-            x, y = G.HOLES[name]
-            part -= Pos(x, y, -0.1) * extrude(
-                Circle(dia / 2 + P.LOCATOR_NEST_CLEAR), amount=top + 0.2)
+    # Registration to the base plate: a round hole at the primary pin, and the
+    # same hole stretched into a slot along the line joining the two at the
+    # secondary. Both sit outboard of the board outline in Y, so they never
+    # break into the board recess.
+    (x0, y0), (x1, y1) = P.REG_XY
+    part -= Pos(x0, y0, -0.1) * extrude(Circle(P.REG_HOLE_D / 2), amount=top + 0.2)
+    ux, uy = x1 - x0, y1 - y0
+    n = (ux * ux + uy * uy) ** 0.5
+    ux, uy = ux / n * P.REG_SLOT_EXTRA / 2, uy / n * P.REG_SLOT_EXTRA / 2
+    slot = LineString([(x1 - ux, y1 - uy), (x1 + ux, y1 + uy)]).buffer(
+        P.REG_HOLE_D / 2, G.ARC_SEGS)
+    part -= extrude(G.sk(slot, Plane.XY.offset(-0.1)), amount=top + 0.2)
+
+    # Pass-through for the base plate's stepped board locators. One straight
+    # hole clears the Ø3.00 shank low down and the Ø2.10 tip higher up.
+    for name in P.LOCATOR_PRIMARY:
+        x, y = G.HOLES[name]
+        part -= Pos(x, y, -0.1) * extrude(
+            Circle(P.LOCATOR_NEST_HOLE_D / 2), amount=top + 0.2)
     return part
 
 
@@ -153,9 +168,10 @@ def build_cover():
               P.COVER_PAD_H + P.COVER_T / 2) * Box(16.0, P.COVER_TAB_L + 2, P.COVER_T)
     part += tab
 
-    # dimple at the centroid of the contact pads: where the clamp spindle lands
-    cxp = sum(p[0] for p in P.COVER_PADS) / len(P.COVER_PADS)
-    cyp = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    # Dimple on the centroid of the post/spring quad: where the clamp spindle
+    # lands. Pressing on the pad centroid instead put the load 15.45 mm off
+    # centre and split the spring set 75/25, so the nest levered down.
+    cxp, cyp = P.COVER_DIMPLE_XY
     top = P.COVER_PAD_H + P.COVER_T
     part -= Pos(cxp, cyp, top) * Sphere(P.COVER_DIMPLE_R)
 
@@ -188,9 +204,9 @@ def clamp_insert_xy():
     the cover's contact pads -- worked back through the clamp's own geometry,
     rather than simply centred on the deck.
     """
-    dimple_y = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    dimple_x, dimple_y = P.COVER_DIMPLE_XY
     near = dimple_y - P.CLAMP_SPINDLE_TO_ROW
-    cx = (P.PEDESTAL_X[0] + P.PEDESTAL_X[1]) / 2
+    cx = dimple_x
     return [(cx + sx * P.CLAMP_HOLE_DX / 2, near - sy * P.CLAMP_HOLE_DY)
             for sx in (-1, 1) for sy in (0, 1)]
 
@@ -224,9 +240,13 @@ def build_stand():
 
     # ribs tying the bay to the outer shell, inset so nothing overhangs the
     # filleted corners, and placed clear of the probe cluster (x -32 to -17)
-    ry0, ry1 = P.STAND_Y[0] + W, P.STAND_Y[1] - W
+    # ...but only in the gap between the bay wall and the outer wall: the bay
+    # interior is the ST-Link's now, and a rib through it would cut the case in
+    # half. The -Y gap is 31 mm, the +Y gap only 2 mm.
     for x in P.RIB_X:
-        part += Pos(x, (ry0 + ry1) / 2, z0 + h / 2) * Box(W, ry1 - ry0, h)
+        for ya, yb in ((P.STAND_Y[0] + W, P.PLATE_Y[0]), (P.PLATE_Y[1], P.STAND_Y[1] - W)):
+            if yb - ya > 0.5:
+                part += Pos(x, (ya + yb) / 2, z0 + h / 2) * Box(W, yb - ya, h)
     rx0, rx1 = P.STAND_X[0] + W, P.STAND_X[1] - W
     for y in (P.PLATE_Y[0], P.PLATE_Y[1]):
         part += Pos((rx0 + rx1) / 2, y, z0 + h / 2) * Box(rx1 - rx0, W, h)
@@ -245,19 +265,50 @@ def build_stand():
     part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
         Box(tx[1] - tx[0] - 2 * W, W, P.TOWER_SOLID_Z - z0)
 
-    # base-plate screws: full-height columns, so nothing hangs in air
-    for x, y in P.MOUNT_SCREW_XY:
-        part += Pos(x, y, z0) * extrude(Circle(4.5), amount=h)
-        part -= Pos(x, y, z1 - 10.0) * extrude(Circle(1.4), amount=10.2)
+    # Deck support. Printed as one part the deck has to bridge the bay, so the
+    # bay walls corbel inward over the last 6 mm -- a 45 degree underside, which
+    # needs no support -- taking the span from 34 mm to 22 mm. The probe tails
+    # reach y=+/-8.8, so 22 mm still clears them by 2.2 mm a side.
+    cz0, cz1 = P.WIRE_BAY_Z, z1
+    inx = (P.PLATE_X[0] + W, P.PLATE_X[1] - W)
+    y_lo, y_hi = P.PLATE_Y[1] - W, P.PLATE_Y[1] - W - P.DECK_CORBEL
+    band = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, cz0), amount=cz1 - cz0)
+    void = Pos((inx[0] + inx[1]) / 2, 0) * loft([
+        Plane.XY.offset(cz0) * Rectangle(inx[1] - inx[0], 2 * y_lo),
+        Plane.XY.offset(cz1) * Rectangle(inx[1] - inx[0], 2 * y_hi)])
+    part += band - void
 
-    # loom exit, straight out through the bay wall and the outer wall
+    # ST-Link floor, and the slide-in opening at the +X end. The case is
+    # captured sideways by the bay walls and from above by the corbel, which is
+    # narrower than the case is wide, so it cannot lift out.
+    part += extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0),
+                    amount=P.STLINK_FLOOR_T)
+    sl, sw, sh = P.STLINK_BODY
+    c = P.STLINK_CLEAR
+    part -= Pos((P.STLINK_X0 + sl) / 2 + 40.0, 0, P.STLINK_BAY_Z + (sh + c) / 2) * \
+        Box(sl + 80.0, sw + 2 * c, sh + c)
+
+    # loom exit -- now only the external 3.3 V feed; the SWD loom stays inside.
+    # It has to cut through the corbel as well as both walls.
     zc = (P.WIRE_EXIT_Z[0] + P.WIRE_EXIT_Z[1]) / 2
     zh = P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]
-    ymid = (P.PLATE_Y[1] + P.STAND_Y[1]) / 2
-    part -= Pos(0, ymid, zc) * Box(P.WIRE_SLOT_W,
-                                   P.STAND_Y[1] - P.PLATE_Y[1] + 4 * W, zh)
+    ya, yb = y_hi - 1.0, P.STAND_Y[1] + 1.0
+    part -= Pos(0, (ya + yb) / 2, zc) * Box(P.WIRE_SLOT_W, yb - ya, zh)
     for sy in (P.PLATE_Y[1] - W / 2, P.STAND_Y[1] - W / 2):
         part += Pos(0, sy, zc) * Box(P.TIE_BAR_W, W, zh)
+    return part
+
+
+def build_body():
+    """Deck and stand as ONE printed part.
+
+    They were two, bolted together with four M3. With the ST-Link wired in
+    permanently they are never separated in service, so the screws bought
+    nothing. The cost is that the deck underside is now a bridge -- see the
+    corbel in build_stand -- and that recalibrating PIN_BORE_D means reprinting
+    the whole body, so confirm the bore with the fit gauge FIRST.
+    """
+    part = build_base_plate() + build_stand()
 
     # Clamp mounting: four blind holes for M3 heat-set inserts, placed so the
     # spindle lands on the cover's dimple. Fixed inserts give up the trim the
@@ -308,21 +359,19 @@ def build_probes():
 
 
 PARTS_TO_BUILD = {
-    "base_plate": build_base_plate,
+    "body": build_body,
     "nest": build_nest,
     "cover": build_cover,
-    "stand": build_stand,
     "fit_gauge": build_fit_gauge,
 }
 
 
 def assembly(open_position=False):
-    """All five parts plus the board, positioned as they sit in use."""
+    """Every part plus the board, positioned as they sit in use."""
     dz = P.TRAVEL if open_position else 0.0
     seat = P.NEST_T + dz
     a = {
-        "base_plate": build_base_plate(),
-        "stand": build_stand(),
+        "body": build_body(),
         "nest": Pos(0, 0, dz) * build_nest(),
         "cover": Pos(0, 0, seat + P.PCB_T) * build_cover(),
         "pcb": G.pcba_solid(seat),
