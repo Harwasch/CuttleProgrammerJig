@@ -14,7 +14,7 @@ Run:  python3 jig.py            -> writes STEP + STL into cad/out/
 """
 import os
 from build123d import *
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, box as shbox
 from shapely.ops import unary_union
 
 import params as P
@@ -237,6 +237,35 @@ def clamp_insert_xy():
 
 
 # ------------------------------------------------------------------- stand --
+def _shrect(xr, yr, r):
+    """shapely rounded rectangle."""
+    return shbox(xr[0] + r, yr[0] + r, xr[1] - r, yr[1] - r).buffer(r, G.ARC_SEGS)
+
+
+def stand_profile(closed=True):
+    """The stand's cross-section: wall ring plus the four lid bosses.
+
+    Built as ONE 2D region and morphologically closed. As bare cylinders the
+    corner bosses either met the wall tangentially -- a wedge closing to zero
+    degrees, which no nozzle can fill -- or stood 1 mm clear of it as free
+    pillars with a slot behind. Dilating then eroding by STAND_BOSS_FILLET
+    fillets every reflex corner between them instead.
+
+    `closed=False` returns the raw union, for tests that need to show the
+    closing is doing something.
+    """
+    W = P.STAND_WALL
+    outer2 = _shrect(P.STAND_X, P.STAND_Y, 6.0)
+    inner2 = _shrect((P.STAND_X[0] + W, P.STAND_X[1] - W),
+                     (P.STAND_Y[0] + W, P.STAND_Y[1] - W), max(6.0 - W, 1.0))
+    region = outer2.difference(inner2).union(unary_union(
+        [Point(x, y).buffer(P.MOUNT_BOSS_R, G.ARC_SEGS) for x, y in P.MOUNT_SCREW_XY]))
+    if closed:
+        f = P.STAND_BOSS_FILLET
+        region = region.buffer(f, G.ARC_SEGS).buffer(-f, G.ARC_SEGS)
+    return region, outer2
+
+
 def build_stand():
     """A plain open box. Everything precise, and the clamp tower, is on the plate.
 
@@ -248,17 +277,14 @@ def build_stand():
     z0, z1 = P.STAND_Z_BOTTOM, P.PLATE_Z_BOTTOM
     W = P.STAND_WALL
 
-    outer = extrude(rrect(P.STAND_X, P.STAND_Y, 6.0, z0), amount=z1 - z0)
-    inner = extrude(rrect((P.STAND_X[0] + W, P.STAND_X[1] - W),
-                          (P.STAND_Y[0] + W, P.STAND_Y[1] - W),
-                          max(6.0 - W, 1.0), z0 + P.STLINK_FLOOR_T),
-                    amount=z1 - z0)
-    part = outer - inner
+    region, outer2 = stand_profile()
+    part = extrude(G.sk(region, Plane.XY.offset(z0)), amount=z1 - z0)
+    part += extrude(G.sk(outer2, Plane.XY.offset(z0)), amount=P.STLINK_FLOOR_T)
 
-    # bosses for the lid screws, full height so nothing hangs in air
+    # blind holes for M3 heat-set inserts -- the same part as the clamp mount
     for x, y in P.MOUNT_SCREW_XY:
-        part += Pos(x, y, z0) * extrude(Circle(P.MOUNT_BOSS_R), amount=z1 - z0)
-        part -= Pos(x, y, z1 - 10.0) * extrude(Circle(1.4), amount=10.2)
+        part -= Pos(x, y, z1 - P.MOUNT_INSERT_DEPTH) * extrude(
+            Circle(P.INSERT_M3_HOLE_D / 2), amount=P.MOUNT_INSERT_DEPTH + 0.1)
 
     # Locating ribs at the corners of the ST-Link footprint. The case drops in
     # from above before the lid goes on, so it needs nothing more than this to

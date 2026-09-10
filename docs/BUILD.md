@@ -9,14 +9,14 @@
 | 1 | `fit_gauge` print | calibration coupon, printed once |
 | 4 | Compression spring, 0.6 × 7 mm | from the kit — **select on solid height, not free length: it must stack shorter than 10 mm** |
 | 1 | GH-201 horizontal toggle clamp | 75 × 25 × 17 mm, 27 kg |
-| 4 | M3 heat-set insert, 4 mm | Kadrick-type, Ø4.5 knurl / Ø3.9 tip — into the clamp deck |
+| 8 | M3 heat-set insert, 4 mm | Kadrick-type, Ø4.5 knurl / Ø3.9 tip — 4 into the clamp deck, 4 into the stand's corner bosses |
 | 4 | M3 × 12 socket screw | toggle clamp to the deck |
 | 1 | ST-LINK/V2 | genuine, in its case — lives in the bay under the deck |
 | 1 | 20-pin IDC socket + ribbon, **or** 6 × female jumper leads | probe tails to the ST-Link header |
 | 1 | small zip tie | strain relief on the 3.3 V feed |
 | — | 7 × silicone wire, **30 AWG** | probe tails; see Wiring |
 
-| 4 | M3 × 12 screw | base plate to stand |
+| 4 | M3 × 12 socket screw | base plate to stand |
 
 ### The ST-Link bay
 
@@ -54,9 +54,18 @@ registration pins, and it is 121 cm³. Run it at 0.12–0.15 mm layers on whiche
 machine you trust most for small features. If you have a **0.2 mm nozzle**, this
 is the part worth the extra time.
 
-**The stand is 107 cm³ of plain walls** with no precision requirement at all —
-four walls, a floor, four bosses and two holes. Put it on whichever machine is
-fastest. If the bore calibration turns out wrong, only the plate reprints.
+**The stand is 110 cm³ of plain walls** with no precision requirement at all —
+four walls, a floor, four corner bosses and two holes. Put it on whichever
+machine is fastest. If the bore calibration turns out wrong, only the plate
+reprints.
+
+The bosses are not cylinders sitting against the walls: the wall ring and the
+four bosses are built as one 2D outline and morphologically closed, so each
+boss blends into its corner on a 3 mm fillet. Left as bare cylinders, two of
+them met the wall exactly tangentially — a wedge closing to zero degrees, which
+no nozzle can fill — and the other two stood 1 mm clear of it as free pillars
+with a slot behind. `verify.py` now checks the cross-section is one connected
+piece and that re-closing it adds nothing.
 
 I have no basis for ranking the H2C, H2D and X1C against each other for
 dimensional accuracy on features this small, so I would not choose between them
@@ -129,20 +138,26 @@ totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
    surface with seven 5.7 mm stubs standing up out of it and nothing within
    30 mm of any of them. Fused to the stand, the same joints sat 22 mm down a
    22 mm slot.
-4. Melt four **M3 heat-set inserts** into the blind holes in the clamp deck,
-   then bolt the GH-201 down with M3 × 12. Set your iron to about 240 °C for
-   PETG, press each insert in square, and let it set before loading it.
+4. Melt in all **eight M3 heat-set inserts** — four in the clamp deck on top of
+   the tower, four in the stand's corner bosses. Set your iron to about 240 °C
+   for PETG, press each one in square, and let it set before loading it.
 
-   The holes are Ø4.0 × 5 mm deep for a 4 mm insert, with 5 mm of solid tower
-   underneath. Load is only about 4 N per bolt, so this is far stronger than it
-   needs to be — the inserts are for a clean repeatable thread, not strength.
+   Then bolt the GH-201 down with M3 × 12. Its holes are Ø4.0 × 5 mm deep with
+   5 mm of solid tower underneath; load is only about 4 N per bolt, so this is
+   far stronger than it needs to be — the inserts are for a clean repeatable
+   thread, not strength.
 5. Drop the **ST-LINK/V2** into the stand between the four floor ribs, feed its
    USB cable out through the hole in the +X wall, and plug the probe loom onto
    its 20-pin header (table below). Bring the 3.3 V feed in through the slot on
    the far side from the clamp and zip-tie it.
-6. Lower the plate onto the stand and fit the four **M3 × 12**. The clamp load
-   is internal — the spindle presses the cover down, the springs push the plate
-   down by the same amount — so these only stop the lid shifting.
+6. Lower the plate onto the stand and fit the four **M3 × 12** into the corner
+   inserts. Heads sit in Ø6.4 × 3 mm counterbores, flush below the plateau.
+
+   These are inserts rather than screws cut straight into the plastic because
+   the plate comes off every time you service the wiring or the ST-Link, and an
+   M3 self-tapped into PETG does not survive many cycles. The clamp load is
+   internal anyway — the spindle presses the cover down, the springs push the
+   plate down by the same amount — so the screws only stop the lid shifting.
 7. Drop a spring into each of the four counterbores, over the guide posts, then
    lower the `nest` on. It passes over the two locator pins and the two
    registration pins without touching either.

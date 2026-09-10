@@ -193,6 +193,16 @@ MOUNT_SCREW_D        =   3.4   # M3 clearance, plate -> stand
 MOUNT_SCREW_XY       = [(-66.0, -51.5), (63.0, -51.5),
                         (-66.0,  21.5), (63.0,  21.5)]
 MOUNT_BOSS_R         =   4.5
+# The bosses sit in the corners, where a bare cylinder either meets the wall
+# tangentially (a zero-degree wedge no nozzle can fill) or misses it entirely.
+# The walls and bosses are built as ONE 2D region and morphologically closed by
+# this radius, which fillets every reflex corner between them.
+STAND_BOSS_FILLET    =   3.0
+# The plate comes off to solder the probe tails and to service the ST-Link, so
+# this thread gets used repeatedly -- an M3 cutting its own thread in PETG will
+# not survive that. Same heat-set insert as the clamp mount.
+MOUNT_INSERT_DEPTH   =   8.0   # 4 mm insert at the top, 4 mm of run-out below,
+                               # so an M3 x 12 cannot bottom out
 # No mounting screws: the deck and the stand are ONE printed part. With the
 # ST-Link wired in permanently the two were never going to be separated in
 # service, so the four M3s were pure assembly cost.
