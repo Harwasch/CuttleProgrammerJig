@@ -75,8 +75,18 @@ def main():
         # volumes before and after a 3 mm lift, which no real boolean can do.
         # Pushing the transform down into each child solid fixes it.
         loc = Location((-OX, -OY, seat))
-        board = Compound(children=[sol.moved(loc)
-                                   for sol in import_step(STEP).solids()])
+        # Drop copper film. 45 solids exactly 0.04 mm thick -- bottom-side pads
+        # and via rings, each wholly inside the nest seat -- were being reported
+        # as a 0.2801 mm3 interference. Every board rests on its own copper;
+        # extract_parts.py excludes these on the same FILM_T rule, so without
+        # this the two paths test different populations and --full can never
+        # agree with the fast path.
+        solids = import_step(STEP).solids()
+        keep = [sol for sol in solids
+                if (sol.bounding_box().max.Z - sol.bounding_box().min.Z) > P.FILM_T]
+        print(f"  ({len(solids) - len(keep)} copper-film solids under "
+              f"{P.FILM_T} mm excluded; {len(keep)} components kept)")
+        board = Compound(children=[sol.moved(loc) for sol in keep])
     else:
         print("building the banded PCBA keep-out solid (fast, conservative) ...")
         board = G.pcba_solid(seat)

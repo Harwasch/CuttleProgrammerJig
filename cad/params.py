@@ -12,6 +12,11 @@ The one number to verify with calipers before printing is PIN_PROTRUSION.
 
 # ---------------------------------------------------------------- board -----
 PCB_T                = 1.627   # board thickness, from the gerber job file
+# Copper is not a component. Pads, via rings and plating sit within this of a
+# board face, and tools/extract_parts.py excludes them from the keep-out lists
+# on exactly this rule -- so verify.py --full has to apply it too, or the exact
+# path and the fast path are not testing the same population.
+FILM_T               = 0.12
 PART_H_BOTTOM        = 2.585   # tallest bottom-side part, from the STEP
 PART_H_TOP_MAIN      = 1.285   # tallest top-side part on the main rigid section
 

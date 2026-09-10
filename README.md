@@ -102,8 +102,19 @@ strictly larger than the parts themselves — a clean result is a proof of
 clearance, not a sample of it. `extract_parts.py` refuses to emit a model that
 would leave any board-spanning solid unaccounted for, which is what makes the
 conservative claim hold. `python3 verify.py --full` re-runs the same checks
-against all 1037 solids of the STEP export if you want the exact numbers;
-it takes far longer and cannot find anything the fast path misses.
+against the STEP export's own solids if you want exact shapes rather than
+bounding boxes. It takes about twenty minutes.
+
+Both paths test the same population — components. `--full` excludes copper
+film (pads, via rings, plating) on the same `FILM_T` rule the extractor uses;
+without that it reported the 45 bottom-side copper pads the board rests on as
+a 0.28 mm³ interference, which every PCB has and no jig can avoid.
+
+The `--full` path was silently broken until recently: a `Location` on a
+`Compound` is ignored by `.intersect()`, so it was measuring the board at its
+raw gerber coordinates and reporting four failures that were pure artefact —
+with identical volumes before and after a 3 mm lift, which no real boolean can
+produce. If you are reading an older revision, do not trust its output.
 
 ## Board source files
 
