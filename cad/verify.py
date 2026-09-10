@@ -204,6 +204,39 @@ def main():
         check(f"{tp['net']:8s} solder access is clear", v < 0.02,
               f"{v:.4f} mm3 below the plate over 30 mm")
 
+    # ------------------------------------------------- plate to stand joint --
+    print("\nplate-to-stand joint")
+    region, _ = jig.stand_profile()
+    f = P.STAND_BOSS_FILLET
+    pieces = len(region.geoms) if region.geom_type == "MultiPolygon" else 1
+    check("stand cross-section is one connected piece", pieces == 1,
+          f"{pieces} piece(s) -- a boss clear of the wall shows up as an island")
+    added = region.buffer(f, G.ARC_SEGS).buffer(-f, G.ARC_SEGS).area - region.area
+    check("no unfillable notch between a boss and a wall", added < 5.0,
+          f"re-closing at {f:.1f} mm adds {added:.2f} mm2 "
+          f"(63.33 mm2 with the bosses left as bare cylinders)")
+
+    for x, y in P.MOUNT_SCREW_XY:
+        hole = Pos(x, y, P.PLATE_Z_BOTTOM - P.MOUNT_INSERT_DEPTH) * extrude(
+            Circle(P.INSERT_M3_HOLE_D / 2 - 0.05), amount=P.MOUNT_INSERT_DEPTH)
+        check(f"insert hole ({x:+6.1f},{y:+6.1f}) is open",
+              vol(stand.intersect(hole)) < 0.02,
+              f"O{P.INSERT_M3_HOLE_D:.1f} x {P.MOUNT_INSERT_DEPTH:.0f} mm deep")
+        ann = P.MOUNT_BOSS_R - P.INSERT_M3_HOLE_D / 2
+        check(f"boss ({x:+6.1f},{y:+6.1f}) has wall around the insert", ann >= 2.0,
+              f"{ann:.2f} mm annulus")
+    below = P.STAND_Z_BOTTOM + P.STLINK_FLOOR_T
+    left = (P.PLATE_Z_BOTTOM - P.MOUNT_INSERT_DEPTH) - below
+    check("material left under a blind lid insert", left >= 3.0,
+          f"{left:.1f} mm of boss below the hole, down to the floor")
+    # an M3 x 12 must reach the insert without bottoming in the hole
+    cbore = 3.0
+    stick = 12.0 - (abs(P.PLATE_Z_BOTTOM) - cbore)
+    check("M3 x 12 engages the insert without bottoming out",
+          P.INSERT_M3_H <= stick < P.MOUNT_INSERT_DEPTH,
+          f"{stick:.1f} mm of screw past the plate into a "
+          f"{P.MOUNT_INSERT_DEPTH:.0f} mm hole, engaging a {P.INSERT_M3_H:.0f} mm insert")
+
     # ---------------------------------------------------------- ST-Link bay --
     print("\nST-Link bay")
     L, Wd, H = P.STLINK_CASE
