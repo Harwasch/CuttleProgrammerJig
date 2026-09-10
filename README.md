@@ -14,7 +14,7 @@ The board never has to be pushed onto exposed probe tips by hand:
 1. A **nest** floats 3 mm above the base on four springs. The probe tips sit
    **1.8 mm below** the board when the clamp is open, so the board drops in
    freely and locates on two pins through its own 2.2 mm holes.
-2. Closing the clamp pushes a **hold-down cover** down onto five pads that
+2. Closing the clamp pushes a **hold-down cover** down onto nine pads that
    land on bare board, driving the nest onto a hard stop.
 3. At the stop the nest has travelled exactly 3 mm, which compresses each
    probe **1.20 mm** — 45 % of the P50's 2.65 mm stroke.
@@ -93,7 +93,7 @@ To regenerate everything after changing a dimension:
 ```bash
 cd cad
 python3 jig.py        # writes STEP + STL into cad/out/
-python3 verify.py     # 40 interference and stack-up checks
+python3 verify.py     # 159 interference, fit and printability checks
 ```
 
 `verify.py` checks the parts against a keep-out solid built from the real
