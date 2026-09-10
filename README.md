@@ -68,17 +68,16 @@ lifting it off its seat. Nothing on the part is thinner than 3 mm.
 `python3 tools/render.py` regenerates all fifteen; `python3 tools/render.py top
 probes` does just those. The renderer is a small software z-buffer rasteriser
 (orthographic, backface-culled, 2x supersampled, with a depth-discontinuity
-outline pass) — a painter's-algorithm sort mis-orders the stand's large flat
-faces against the base plate.
+outline pass) — a painter's-algorithm sort mis-orders the body's large flat
+faces against each other.
 
 ## Parts
 
 | Part | Print | Notes |
 |---|---|---|
-| `base_plate` | flat, posts up | The precision part: 7 probe bores, 4 guide posts, 4 board locator pins, spring pockets |
-| `nest` | flat | Six seat bosses, one relief pocket, pass-throughs for the locator pins |
-| `cover` | pads up | Hold-down; presses only on bare board |
-| `stand` | as modelled | One piece, one rectangular footprint: board bay, clamp tower, 22 mm of wiring space |
+| `body` | as modelled, deck up | Everything precise and everything structural in one part: 7 probe bores, 4 guide posts, 2 stepped board locators, 2 registration pins, spring pockets, board bay, clamp tower, wire bay and the ST-Link bay under it |
+| `nest` | flat | Six seat bosses, one relief pocket, pass-throughs for the locator and registration pins |
+| `cover` | pads up | Hold-down; presses only on bare board, rides all four posts, pressed on the centre of the spring quad |
 | `fit_gauge` | flat | Calibration coupon; print once to set the probe bore size |
 
 STEP and STL for all of them are in [`cad/out/`](cad/out).

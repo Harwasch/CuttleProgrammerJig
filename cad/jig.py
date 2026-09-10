@@ -1,11 +1,14 @@
 """Cuttle CANServo_Driver pogo programming jig.
 
-Four printed parts:
-  base_plate  precision part -- 7 probe bores, 4 guide posts, spring pockets
-  stand       one piece: open frame under the plate plus the clamp tower
+Three printed parts:
+  body        deck and stand fused: 7 probe bores, 4 guide posts, 2 stepped
+              board locators, 2 registration pins, the clamp tower, the wire
+              bay and the ST-Link bay beneath it
   nest        floating board carrier, rides the posts on springs
   cover       hold-down that presses only on bare board, guided by all four
               posts and pressed on the centre of the post/spring quad
+
+plus fit_gauge, a calibration coupon that is printed once and thrown away.
 
 Run:  python3 jig.py            -> writes STEP + STL into cad/out/
 """
@@ -86,9 +89,6 @@ def build_base_plate():
         part += Pos(x, y, P.LOCATOR_TOP_Z - 0.6) * extrude(
             Circle(P.LOCATOR_D / 2), amount=0.6, taper=30)
 
-    for x, y in P.MOUNT_SCREW_XY:
-        part -= Pos(x, y, z0 - 0.1) * extrude(
-            Circle(P.MOUNT_SCREW_D / 2), amount=-z0 + 0.2)
     return part
 
 
@@ -240,9 +240,13 @@ def build_stand():
 
     # ribs tying the bay to the outer shell, inset so nothing overhangs the
     # filleted corners, and placed clear of the probe cluster (x -32 to -17)
-    ry0, ry1 = P.STAND_Y[0] + W, P.STAND_Y[1] - W
+    # ...but only in the gap between the bay wall and the outer wall: the bay
+    # interior is the ST-Link's now, and a rib through it would cut the case in
+    # half. The -Y gap is 31 mm, the +Y gap only 2 mm.
     for x in P.RIB_X:
-        part += Pos(x, (ry0 + ry1) / 2, z0 + h / 2) * Box(W, ry1 - ry0, h)
+        for ya, yb in ((P.STAND_Y[0] + W, P.PLATE_Y[0]), (P.PLATE_Y[1], P.STAND_Y[1] - W)):
+            if yb - ya > 0.5:
+                part += Pos(x, (ya + yb) / 2, z0 + h / 2) * Box(W, yb - ya, h)
     rx0, rx1 = P.STAND_X[0] + W, P.STAND_X[1] - W
     for y in (P.PLATE_Y[0], P.PLATE_Y[1]):
         part += Pos((rx0 + rx1) / 2, y, z0 + h / 2) * Box(rx1 - rx0, W, h)
@@ -261,19 +265,50 @@ def build_stand():
     part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
         Box(tx[1] - tx[0] - 2 * W, W, P.TOWER_SOLID_Z - z0)
 
-    # base-plate screws: full-height columns, so nothing hangs in air
-    for x, y in P.MOUNT_SCREW_XY:
-        part += Pos(x, y, z0) * extrude(Circle(4.5), amount=h)
-        part -= Pos(x, y, z1 - 10.0) * extrude(Circle(1.4), amount=10.2)
+    # Deck support. Printed as one part the deck has to bridge the bay, so the
+    # bay walls corbel inward over the last 6 mm -- a 45 degree underside, which
+    # needs no support -- taking the span from 34 mm to 22 mm. The probe tails
+    # reach y=+/-8.8, so 22 mm still clears them by 2.2 mm a side.
+    cz0, cz1 = P.WIRE_BAY_Z, z1
+    inx = (P.PLATE_X[0] + W, P.PLATE_X[1] - W)
+    y_lo, y_hi = P.PLATE_Y[1] - W, P.PLATE_Y[1] - W - P.DECK_CORBEL
+    band = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, cz0), amount=cz1 - cz0)
+    void = Pos((inx[0] + inx[1]) / 2, 0) * loft([
+        Plane.XY.offset(cz0) * Rectangle(inx[1] - inx[0], 2 * y_lo),
+        Plane.XY.offset(cz1) * Rectangle(inx[1] - inx[0], 2 * y_hi)])
+    part += band - void
 
-    # loom exit, straight out through the bay wall and the outer wall
+    # ST-Link floor, and the slide-in opening at the +X end. The case is
+    # captured sideways by the bay walls and from above by the corbel, which is
+    # narrower than the case is wide, so it cannot lift out.
+    part += extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0),
+                    amount=P.STLINK_FLOOR_T)
+    sl, sw, sh = P.STLINK_BODY
+    c = P.STLINK_CLEAR
+    part -= Pos((P.STLINK_X0 + sl) / 2 + 40.0, 0, P.STLINK_BAY_Z + (sh + c) / 2) * \
+        Box(sl + 80.0, sw + 2 * c, sh + c)
+
+    # loom exit -- now only the external 3.3 V feed; the SWD loom stays inside.
+    # It has to cut through the corbel as well as both walls.
     zc = (P.WIRE_EXIT_Z[0] + P.WIRE_EXIT_Z[1]) / 2
     zh = P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]
-    ymid = (P.PLATE_Y[1] + P.STAND_Y[1]) / 2
-    part -= Pos(0, ymid, zc) * Box(P.WIRE_SLOT_W,
-                                   P.STAND_Y[1] - P.PLATE_Y[1] + 4 * W, zh)
+    ya, yb = y_hi - 1.0, P.STAND_Y[1] + 1.0
+    part -= Pos(0, (ya + yb) / 2, zc) * Box(P.WIRE_SLOT_W, yb - ya, zh)
     for sy in (P.PLATE_Y[1] - W / 2, P.STAND_Y[1] - W / 2):
         part += Pos(0, sy, zc) * Box(P.TIE_BAR_W, W, zh)
+    return part
+
+
+def build_body():
+    """Deck and stand as ONE printed part.
+
+    They were two, bolted together with four M3. With the ST-Link wired in
+    permanently they are never separated in service, so the screws bought
+    nothing. The cost is that the deck underside is now a bridge -- see the
+    corbel in build_stand -- and that recalibrating PIN_BORE_D means reprinting
+    the whole body, so confirm the bore with the fit gauge FIRST.
+    """
+    part = build_base_plate() + build_stand()
 
     # Clamp mounting: four blind holes for M3 heat-set inserts, placed so the
     # spindle lands on the cover's dimple. Fixed inserts give up the trim the
@@ -324,21 +359,19 @@ def build_probes():
 
 
 PARTS_TO_BUILD = {
-    "base_plate": build_base_plate,
+    "body": build_body,
     "nest": build_nest,
     "cover": build_cover,
-    "stand": build_stand,
     "fit_gauge": build_fit_gauge,
 }
 
 
 def assembly(open_position=False):
-    """All five parts plus the board, positioned as they sit in use."""
+    """Every part plus the board, positioned as they sit in use."""
     dz = P.TRAVEL if open_position else 0.0
     seat = P.NEST_T + dz
     a = {
-        "base_plate": build_base_plate(),
-        "stand": build_stand(),
+        "body": build_body(),
         "nest": Pos(0, 0, dz) * build_nest(),
         "cover": Pos(0, 0, seat + P.PCB_T) * build_cover(),
         "pcb": G.pcba_solid(seat),

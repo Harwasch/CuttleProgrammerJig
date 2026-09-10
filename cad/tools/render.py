@@ -21,8 +21,8 @@ OUT = os.path.join(HERE, "..", "out")
 SS = 2                      # supersampling factor
 LIGHT = np.array([0.45, -0.75, 0.62])
 
-COLOR = dict(base_plate="#4d7fc4", nest="#dfa03a", cover="#c0574f",
-             stand="#9aa0a6", pcba="#12602c", probes_hw="#d8b23a",
+COLOR = dict(body="#4d7fc4", nest="#dfa03a", cover="#c0574f",
+             pcba="#12602c", probes_hw="#d8b23a",
              fit_gauge="#6f8fae")
 
 
@@ -175,12 +175,12 @@ def shot(parts, path, title, az=35, el=22, w=1400, h=900, focus=None, labels=Non
 
 
 COVER_Z = P.NEST_T + P.PCB_T
-JIG = [("stand", 0), ("base_plate", 0), ("probes_hw", 0)]
+JIG = [("body", 0), ("probes_hw", 0)]
 CLOSED = JIG + [("nest", 0), ("cover", COVER_Z)]
 CLOSED_PCB = JIG + [("nest", 0), ("pcba", 0), ("cover", COVER_Z)]
 OPEN_PCB = JIG + [("nest", P.TRAVEL), ("pcba", P.TRAVEL),
                   ("cover", COVER_Z + P.TRAVEL)]
-EXPLODE = [("stand", -20), ("base_plate", 0), ("probes_hw", 0),
+EXPLODE = [("body", 0), ("probes_hw", 0),
            ("nest", 16), ("pcba", 30), ("cover", COVER_Z + 42)]
 
 VIEWS = {
@@ -193,18 +193,18 @@ VIEWS = {
     "top":             (CLOSED_PCB, 0, 89, "plan view"),
     "jig_only":        (JIG + [("nest", 0)], 40, 40,
                         "jig with the cover off - nest window and probe platform"),
-    "underside":       ([("stand", 0), ("base_plate", 0), ("probes_hw", 0)],
+    "underside":       ([("body", 0), ("probes_hw", 0)],
                         -140, -34,
                         "underside - sleeve tails in the open wiring space, "
                         "loom exit with its tie post"),
-    "wiring":          ([("base_plate", 0), ("probes_hw", 0)], -120, -40,
+    "wiring":          ([("body", 0), ("probes_hw", 0)], -120, -40,
                         "solder side - seven R50 sleeve tails, 5.7 mm proud, "
                         "tightest pair 4.3 mm apart",
                         (-24.7, -1.5, -11.0, 16.0)),
-    "stand":           ([("stand", 0)], 34, 30,
-                        "stand - one rectangular footprint; the clamp tower is the same shell"),
-    "stand_top":       ([("stand", 0)], 20, 62,
-                        "stand from above - board bay, clamp tower, tie-off ribs"),
+    "stand":           ([("body", 0)], 34, 30,
+                        "body - deck and stand as one part; the ST-Link bay is underneath"),
+    "stand_top":       ([("body", 0)], 20, 62,
+                        "body from above - board bay, centred clamp tower, tie-off ribs"),
     "nest_top":        ([("nest", 0)], 30, 52,
                         "nest - six seat bosses, one relief pocket, no pins of its own",
                         (-14.0, 0.0, 5.0, 42.0)),
@@ -214,16 +214,16 @@ VIEWS = {
     "gauge":           ([("fit_gauge", 0)], 22, 46,
                         "fit gauge - print once, find the hole an R50 sleeve just "
                         "enters, put that number in PIN_BORE_D"),
-    "probes":          ([("base_plate", 0), ("probes_hw", 0)], 18, 62,
+    "probes":          ([("body", 0), ("probes_hw", 0)], 18, 62,
                         "base plate close-up - all seven probe islands, "
                         "cut back where a bottom-side part would foul them",
                         (-24.7, -1.5, 2.0, 13.5)),
-    "probes_board":    ([("base_plate", 0), ("pcba", 0)], 24, 34,
+    "probes_board":    ([("body", 0), ("pcba", 0)], 24, 34,
                         "probe islands under the board, clamp closed",
                         (-24.7, -1.0, 4.0, 20.0)),
     "open":            (OPEN_PCB, 30, 18,
                         "clamp OPEN - nest, board and cover lifted 3 mm clear of the probes"),
-    "exploded":        (EXPLODE, 34, 20, "exploded - stand, base plate, nest, board, cover"),
+    "exploded":        (EXPLODE, 34, 20, "exploded - body, nest, board, cover"),
 }
 
 
@@ -234,8 +234,8 @@ LABELS = {
                 46 if t["y"] > 0 else -46) for t in _B["test_points"]],
     "probes": [((t["x"], t["y"], P.Z_PIN_TOP), t["net"], -46 if t["y"] > 0 else 46)
                for t in _B["test_points"]],
-    "exploded": [((-58, 0, -18), "stand", -40), ((-24, -38, 2), "clamp tower", 40),
-                 ((-58, 0, -4), "base plate", -34), ((-58, 0, 16), "nest", -34),
+    "exploded": [((-58, 0, -18), "body", -40), ((-24, -38, 2), "clamp tower", 40),
+                 ((-58, 0, -4), "deck", -34), ((-58, 0, 16), "nest", -34),
                  ((20, 0, 30 + P.NEST_T), "board", -38),
                  ((-24, 0, P.NEST_T + P.PCB_T + 42 + 5.8), "hold-down cover", -38)],
 }

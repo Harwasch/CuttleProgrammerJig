@@ -183,13 +183,20 @@ PLATE_Z_BOTTOM       =  -8.0
 PLATE_X              = (-64.0, 61.0)
 PLATE_Y              = ( -21.0, 21.0)
 PLATE_FILLET         =   4.0
-MOUNT_SCREW_D        =   3.4   # M3 clearance, base plate -> stand
-MOUNT_SCREW_XY       = [(-59.0, -15.5), (-59.0, 15.5), (56.0, -15.5), (56.0, 15.5)]
+# No mounting screws: the deck and the stand are ONE printed part. With the
+# ST-Link wired in permanently the two were never going to be separated in
+# service, so the four M3s were pure assembly cost.
 
 # ------------------------------------------------------------------ stand ---
 # One monolithic part: the open frame under the base plate and the clamp tower
 # are the same walls, not a bolt-on bracket.
-STAND_Z_BOTTOM       = -30.0   # 22 mm of open space under the plate for wiring
+STAND_Z_BOTTOM       = -36.0   # deep enough for the wire space AND the ST-Link
+WIRE_BAY_Z           = -14.0   # wire space is the deck underside down to here
+# The deck has to bridge the bay when the body prints as one piece. The walls
+# corbel inward at 45 degrees over the last 6 mm -- printable without support --
+# which cuts the span from 34 mm to 22 mm and still clears the probe tails,
+# which reach y = +/-8.8 and z = -13.65.
+DECK_CORBEL          =   6.0
 STAND_WALL           =   4.0
 # The GH-201's spindle sits at its mounting plane and only adjusts DOWNWARD, so
 # the deck has to be ABOVE the surface it presses. The cover top is 13.43 mm
@@ -200,7 +207,10 @@ TOWER_TOP_Z          =  20.0   # clamp mounting deck
 TOWER_DECK_T         =   5.0
 TOWER_SOLID_Z        =  10.0   # tower is hollow below this, solid above; keeps
                                # the solid band ~10 mm as the deck rises
-WIRE_EXIT_Z          = (-26.0, -12.0)   # loom exit, on the far side from the clamp
+WIRE_EXIT_Z          = (-13.5,  -8.5)   # feed for the external 3.3 V supply, on
+                                        # the far side from the clamp. The SWD
+                                        # loom no longer leaves the body -- it
+                                        # goes straight down to the ST-Link.
 TIE_BAR_W            =   4.0           # vertical divider, to tie the loom against
 WIRE_SLOT_W          =  20.0
 
@@ -228,6 +238,27 @@ PEDESTAL_Y           = (-56.0, -21.0)
 # Ribs must miss the loom run: the probe cluster is at x -32..-17 and the exit
 # at x +/-10, so a rib at x -4 sat right in the path.
 RIB_X                = [-46.0, 20.0]  # internal ribs, vertical walls only
+
+# ---------------------------------------------------------------- ST-Link ---
+# Genuine ST-LINK/V2 in its plastic case, wired in permanently. It slides into
+# the bay under the wire space from the +X end; its 20-pin IDC faces -X, a short
+# run from the probe tails, and its USB mini-B faces +X, out through the wall.
+#
+# ST does not publish the enclosure size, so MEASURE YOURS before printing the
+# body -- it is the one number here taken from a general listing rather than
+# from the part. The bay is a plain rectangular pocket driven entirely by this
+# tuple, so correcting it is a one-line change and a reprint of the body only.
+STLINK_BODY          = (97.0, 32.0, 17.0)   # L x W x H  <-- MEASURE THIS
+STLINK_CLEAR         =   1.0   # all round, on every face
+STLINK_BAY_Z         = -34.0   # floor the case rests on
+STLINK_X0            = -40.0   # -X end of the case: the 20-pin header end.
+                               # Set so the +X end lands flush with the inner
+                               # wall face, or the USB socket sits in a recess
+                               # the plug cannot reach. 20 mm is left behind the
+                               # header for the run up to the probe tails.
+STLINK_USB_W         =  12.0   # opening for a mini-B plug and its boot
+STLINK_USB_H         =  10.0
+STLINK_FLOOR_T       =   2.0
 
 # -------------------------------------------------------- clamp interface ---
 # GH-201 horizontal toggle clamp: 75 x 25 x 17 mm, mounting holes on a
