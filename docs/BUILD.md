@@ -16,21 +16,22 @@
 | 1 | small zip tie | strain relief on the 3.3 V feed |
 | — | 7 × silicone wire, **30 AWG** | probe tails; see Wiring |
 
-There are no screws holding the deck to the stand any more: they are one
-printed part, the `body`.
+| 4 | M3 × 12 screw | base plate to stand |
 
-### Measure your ST-LINK/V2 first
+### The ST-Link bay
 
-`STLINK_BODY` in [`cad/params.py`](../cad/params.py) is **97 × 32 × 17 mm**,
-which is a general figure rather than one taken off the part — ST does not
-publish the enclosure size. Put calipers on yours before printing the body.
-The bay is a plain rectangular pocket driven entirely by that one tuple, so
-correcting it is a one-line change; but it means reprinting the body, which is
-the long print. Everything else is unaffected.
+`STLINK_CASE` in [`cad/params.py`](../cad/params.py) is **100 × 50 × 30 mm**,
+plus `STLINK_HEADER_ROOM` (15 mm, for the 20-pin ribbon) and `STLINK_USB_ROOM`
+(12 mm, for the plug and its boot). That makes a **127 × 52 × 32 mm** cavity in
+a 137 × 83 × 40 mm interior, so there is room to spare in every direction.
 
-An ST-Link V2 *mini* (the bare ~43 × 18 × 8 mm board) will rattle in a bay cut
-for the full-size case. Shim it, or set `STLINK_BODY` to the mini's dimensions
-and reprint — the bay follows either way.
+The case drops in from above before the lid goes on — no slide-in opening to
+line up — and four ribs on the floor stop it wandering. Only the USB cable
+leaves, through a 16 × 14 mm hole in the +X wall.
+
+Trim `HEADER_ROOM` and `USB_ROOM` once you can see how your cables actually
+bend. Both are parameters; only the stand reprints, and the stand carries
+nothing precise.
 
 Print everything in **PETG**, not PLA — the jig sits under continuous spring
 load and PLA creeps, and PETG takes heat-set inserts well. ABS also works if
@@ -38,25 +39,24 @@ you would rather, but nothing here needs its temperature resistance.
 
 ### Which printer
 
-Every part fits every machine you have — the largest is the `body` at
-137 × 83 × 56 mm, well inside an X1C's 256 mm bed, let alone an H2D or H2C. So
-build volume is not the deciding factor; two other things are.
+Every part fits every machine you have — the two largest are both
+145 × 91 mm in plan, well inside an X1C's 256 mm bed, let alone an H2D or H2C.
+So build volume is not the deciding factor; two other things are.
 
-**Keep the fit gauge and the body on the same machine, nozzle and filament.**
-The gauge exists to measure *that machine's* hole shrinkage. Print the gauge on
-one printer and the body on another and the calibration is void — this matters
-more than which printer you pick.
+**Keep the fit gauge and the base plate on the same machine, nozzle and
+filament.** The gauge exists to measure *that machine's* hole shrinkage. Print
+the gauge on one printer and the plate on another and the calibration is void —
+this matters more than which printer you pick.
 
-**Confirm the bore calibration before you print the body.** The deck used to be
-a separate 42 cm³ part you could reprint on its own; now it is fused to the
-stand, so a wrong `PIN_BORE_D` costs you the whole 193 cm³ print. Print the
-gauge, settle the number, *then* commit.
+**The base plate is the only part where precision matters.** It carries the
+seven Ø1.2 mm probe bores, four guide posts, two stepped board locators and two
+registration pins, and it is 121 cm³. Run it at 0.12–0.15 mm layers on whichever
+machine you trust most for small features. If you have a **0.2 mm nozzle**, this
+is the part worth the extra time.
 
-**The body carries everything precise** — the seven Ø1.2 mm probe bores, four
-guide posts, two board locators and two registration pins — and at 193 cm³ it
-is also the long print. Run it at 0.12–0.15 mm layers on whichever machine you
-trust most for small features. If you have a **0.2 mm nozzle**, this is the
-part worth the extra time.
+**The stand is 107 cm³ of plain walls** with no precision requirement at all —
+four walls, a floor, four bosses and two holes. Put it on whichever machine is
+fastest. If the bore calibration turns out wrong, only the plate reprints.
 
 I have no basis for ranking the H2C, H2D and X1C against each other for
 dimensional accuracy on features this small, so I would not choose between them
@@ -73,19 +73,15 @@ fit gauge tell you what it actually produces.
 | Hole horizontal expansion | **0** | you calibrate with the gauge instead |
 | Supports | **none** | see below |
 
-Orientation: `body` on its own base (deck up), `nest` lip up, `cover` **pads
-up** (inverted from how it is modelled).
+Orientation: `base_plate` flat on its underside (posts, pins and clamp tower
+all pointing up), `stand` on its own base, `nest` lip up, `cover` **pads up**
+(inverted from how it is modelled).
 
-Almost every feature is then a vertical wall or a vertical hole. The exception
-is the deck: fusing it to the stand means its underside now spans the wire bay.
-The bay walls corbel inward at 45° over the last 6 mm — printable without
-support — which cuts that span from 34 mm to **22 mm**, and 22 mm still leaves
-2.2 mm either side of the probe tails. `verify.py` measures the largest circle
-that fits inside every downward face and requires it to be under 25 mm.
-
-That underside is the ceiling of the wire bay: nothing bears on it and nothing
-above it depends on its finish. The probe bore's precision section starts
-1.65 mm — about eight layers — above it.
+In those orientations every feature is a vertical wall or a vertical hole. The
+largest unsupported span anywhere is **11.5 mm**, the roof of the clamp tower's
+cavity, which bridges without help. `verify.py` measures the largest circle that
+fits inside every downward face — the distance filament actually spans — and
+requires it to be under 25 mm.
 
 ## Calibrate the probe bores first
 
@@ -94,7 +90,7 @@ small vertical hole undersize by an amount specific to your printer, nozzle,
 material and speed, so you calibrate once:
 
 1. Print `fit_gauge.stl` (80 × 14 mm, about 20 minutes) in the **same material
-   and profile** you will use for the body. It has ten bores labelled
+   and profile** you will use for the base plate. It has ten bores labelled
    90 to 135, in hundredths of a millimetre.
 2. Try an R50 sleeve in each. You want the smallest hole it enters with firm
    thumb pressure and does not rattle in. The answer must have a bore that is
@@ -125,10 +121,14 @@ totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
    the Ø1.4 mm lead-in, until its top is flush with the platform. The tail then
    projects 5.7 mm below the deck into the wire bay. The bore locates the
    sleeve; it does not necessarily retain it — see Wiring.
-3. With the **ST-Link not yet fitted**, turn the body over and solder a wire to
+3. With the plate **off the stand and turned upside down**, solder a wire to
    each sleeve tail, then wick a drop of thin CA into each sleeve/bore joint to
-   lock it. Label the wires as you go. The bay is open all the way to its floor
-   26 mm down while the ST-Link is out, which is why this step comes first.
+   lock it. Label the wires as you go.
+
+   This is why the plate is a separate part. Inverted on the bench it is a flat
+   surface with seven 5.7 mm stubs standing up out of it and nothing within
+   30 mm of any of them. Fused to the stand, the same joints sat 22 mm down a
+   22 mm slot.
 4. Melt four **M3 heat-set inserts** into the blind holes in the clamp deck,
    then bolt the GH-201 down with M3 × 12. Set your iron to about 240 °C for
    PETG, press each insert in square, and let it set before loading it.
@@ -136,28 +136,28 @@ totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
    The holes are Ø4.0 × 5 mm deep for a 4 mm insert, with 5 mm of solid tower
    underneath. Load is only about 4 N per bolt, so this is far stronger than it
    needs to be — the inserts are for a clean repeatable thread, not strength.
-5. Wire the tails to the ST-Link's 20-pin header (table below), slide the
-   **ST-LINK/V2** into the bay from the +X end until its USB socket is flush
-   with the wall, and bring the 3.3 V feed in through the slot on the far side
-   from the clamp. Zip-tie it to the divider post.
-
-   The case cannot lift out once fitted: the corbel above it leaves a 22 mm
-   opening and the case is 32 mm wide.
-6. Drop a spring into each of the four counterbores, over the guide posts, then
+5. Drop the **ST-LINK/V2** into the stand between the four floor ribs, feed its
+   USB cable out through the hole in the +X wall, and plug the probe loom onto
+   its 20-pin header (table below). Bring the 3.3 V feed in through the slot on
+   the far side from the clamp and zip-tie it.
+6. Lower the plate onto the stand and fit the four **M3 × 12**. The clamp load
+   is internal — the spindle presses the cover down, the springs push the plate
+   down by the same amount — so these only stop the lid shifting.
+7. Drop a spring into each of the four counterbores, over the guide posts, then
    lower the `nest` on. It passes over the two locator pins and the two
    registration pins without touching either.
-7. The board drops onto the **body's** locator pins, through the nest, and
+8. The board drops onto the **base plate's** locator pins, through the nest, and
    seats on six nest bosses — one at each of its own mounting holes — plus the
    SWD tab and both flex necks, which carry no bottom-side parts at all. MH1 and
    MH4 at Ø2.10 locate it; there are no secondary pins.
 
-   The pins are on the body rather than the nest so the board registers directly
+   The pins are on the base plate rather than the nest so the board registers directly
    to the part that holds the probes: worst case 0.444 mm rather than 0.676 mm,
    against 0.5 mm of usable pad. They are stepped — Ø3.00 up to the seat, then
    Ø2.10 — so only 6 mm stands proud, at 2.9:1 rather than 5.7:1.
-8. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
+9. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
    stand 3.35 mm proud of the platform.
-9. Adjust the clamp spindle. It presses **downward** from the clamp's mounting
+10. Adjust the clamp spindle. It presses **downward** from the clamp's mounting
    plane, and the deck sits at z = 20 mm against a cover top of 13.4 mm, so the
    spindle should end up about 6.6 mm proud — mid-range on its thread. Set it so
    the handle closes with a firm over-centre snap and the nest is driven fully
@@ -166,14 +166,12 @@ totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
 
 ## Wiring
 
-Solder **before the ST-Link goes in**, with the body turned over. The tails
-reach 5.7 mm down into a bay that is open for a further 20 mm below them, so
-there is room for an iron. Once the ST-Link is fitted that drops to 3.35 mm of
-clearance above the case — enough that nothing touches, not enough to work in.
+Solder with the plate **off the stand and inverted** — seven free-standing
+stubs on a flat surface, nothing within 30 mm of any of them.
 
-The SWD loom no longer leaves the body: it runs from the tails straight down to
-the ST-Link's 20-pin header, about 30 mm. Only the external 3.3 V feed uses the
-slot in the far wall.
+The SWD loom does not leave the assembly: it runs from the tails down to the
+ST-Link's 20-pin header inside the stand. Only the external 3.3 V feed uses the
+slot in the far wall, and only the USB cable leaves the box.
 
 The tails sit on a 4.3 mm minimum pitch, so use **30 AWG silicone wire**
 (≈0.8 mm OD) rather than 26 AWG. Current is a non-issue — the MCU draws tens
@@ -203,7 +201,7 @@ pins is far more headroom than the few tens of mA the MCU needs.
 
 1. Open the clamp, lift the cover off by its tab.
 2. Drop the board into the nest recess; it seats on two locator pins.
-3. Replace the cover — it drops over the two left-hand guide posts and can
+3. Replace the cover — it drops over all four guide posts and can
    only go on one way round.
 4. Close the clamp. The nest travels 3 mm to a hard stop.
 5. Flash. Open the clamp; the springs lift the board clear of the probes.
@@ -244,7 +242,7 @@ plate, that is the cause — shorten `PIN_BORE_L` to 6 mm and reprint the
 plate; the cost is 0.007 mm of extra probe tilt, which is nothing against the
 0.444 mm budget.
 
-**`CLAMP_SPINDLE_TO_ROW` (24.6 mm) — measure this before printing the body.**
+**`CLAMP_SPINDLE_TO_ROW` (24.6 mm) — measure this before printing the plate.**
 It is the distance from the spindle axis to the nearer of the two mounting-hole
 rows, and it decides where the spindle lands on the cover. Fixed inserts have no
 fore-and-aft slop to absorb an error, unlike the sliding nuts they replaced.
@@ -257,5 +255,5 @@ hole pattern, also read off the drawing. Check with calipers.
 
 `TOWER_TOP_Z` (20 mm) sets how high the clamp sits. Reach is adjustable — the
 deck slots give 8 mm on top of the clamp's own, and the spindle covers height —
-but the deck height itself is part of the body, so changing it means
-reprinting the body.
+but the deck height itself is part of the base plate, so changing it means
+reprinting the plate.

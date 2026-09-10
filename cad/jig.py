@@ -89,6 +89,31 @@ def build_base_plate():
         part += Pos(x, y, P.LOCATOR_TOP_Z - 0.6) * extrude(
             Circle(P.LOCATOR_D / 2), amount=0.6, taper=30)
 
+    # Clamp tower. It belongs to the plate rather than the stand so the whole
+    # clamp loop -- spindle, cover, board, nest, springs, plate, tower -- closes
+    # inside one part, and so its walls stop running down through the middle of
+    # the stand's interior, which is the ST-Link's now. Hollow below
+    # TOWER_SOLID_Z with a cross rib, so the cavity roof bridges about 13 mm.
+    tx, ty = P.PEDESTAL_X, P.PEDESTAL_Y
+    W = P.STAND_WALL
+    part += extrude(rrect(tx, ty, P.PLATE_FILLET, z0), amount=P.TOWER_TOP_Z - z0)
+    part -= extrude(rrect((tx[0] + W, tx[1] - W), (ty[0] + W, ty[1] - W), 2.0, z0),
+                    amount=P.TOWER_SOLID_Z - z0)
+    tcx, tcy = (tx[0] + tx[1]) / 2, (ty[0] + ty[1]) / 2
+    part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
+        Box(W, ty[1] - ty[0] - 2 * W, P.TOWER_SOLID_Z - z0)
+    part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
+        Box(tx[1] - tx[0] - 2 * W, W, P.TOWER_SOLID_Z - z0)
+    for x, y in clamp_insert_xy():
+        part -= Pos(x, y, P.TOWER_TOP_Z - P.INSERT_M3_HOLE_DEPTH) * extrude(
+            Circle(P.INSERT_M3_HOLE_D / 2), amount=P.INSERT_M3_HOLE_DEPTH + 0.1)
+
+    # lid screws, counterbored so the heads sit below the plateau
+    for x, y in P.MOUNT_SCREW_XY:
+        part -= Pos(x, y, z0 - 0.1) * extrude(
+            Circle(P.MOUNT_SCREW_D / 2), amount=-z0 + 0.2)
+        part -= Pos(x, y, -3.0) * extrude(Circle(3.2), amount=3.1)
+
     return part
 
 
@@ -213,113 +238,55 @@ def clamp_insert_xy():
 
 # ------------------------------------------------------------------- stand --
 def build_stand():
-    """One monolithic part, one full rectangular footprint.
+    """A plain open box. Everything precise, and the clamp tower, is on the plate.
 
-    FDM notes: every feature here is a vertical wall or a vertical hole. The
-    shell is open top and bottom, so there is no roof to bridge; the base plate
-    lands on a bay wall that runs all the way to the bench rather than on
-    cantilevered bosses; the clamp tower is solid up to a shallow nut channel;
-    and the loom slot is split by a post so its top edge spans 8 mm, not 20.
-
-    The clamp bolts into M3 heat-set inserts in the deck.
+    The stand used to carry the tower and an internal bay wall, which between
+    them cut the interior into pieces too small for the ST-Link. It is now four
+    walls, a floor and four screw bosses, and the whole 137 x 83 x 40 mm
+    interior is one clear volume.
     """
     z0, z1 = P.STAND_Z_BOTTOM, P.PLATE_Z_BOTTOM
     W = P.STAND_WALL
-    h = z1 - z0
 
-    def shell(xr, yr, fil, height, top=None):
-        """Outer prism minus its own interior -- walls only, open top and bottom."""
-        outer = extrude(rrect(xr, yr, fil, z0), amount=height)
-        inner = extrude(rrect((xr[0] + W, xr[1] - W), (yr[0] + W, yr[1] - W),
-                              max(fil - W, 1.0), z0 - 0.1), amount=height + 0.2)
-        return outer - inner
+    outer = extrude(rrect(P.STAND_X, P.STAND_Y, 6.0, z0), amount=z1 - z0)
+    inner = extrude(rrect((P.STAND_X[0] + W, P.STAND_X[1] - W),
+                          (P.STAND_Y[0] + W, P.STAND_Y[1] - W),
+                          max(6.0 - W, 1.0), z0 + P.STLINK_FLOOR_T),
+                    amount=z1 - z0)
+    part = outer - inner
 
-    # outer shell, and the bay whose wall top carries the base plate
-    part = shell(P.STAND_X, P.STAND_Y, 6.0, h)
-    part += shell(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, h)
+    # bosses for the lid screws, full height so nothing hangs in air
+    for x, y in P.MOUNT_SCREW_XY:
+        part += Pos(x, y, z0) * extrude(Circle(P.MOUNT_BOSS_R), amount=z1 - z0)
+        part -= Pos(x, y, z1 - 10.0) * extrude(Circle(1.4), amount=10.2)
 
-    # ribs tying the bay to the outer shell, inset so nothing overhangs the
-    # filleted corners, and placed clear of the probe cluster (x -32 to -17)
-    # ...but only in the gap between the bay wall and the outer wall: the bay
-    # interior is the ST-Link's now, and a rib through it would cut the case in
-    # half. The -Y gap is 31 mm, the +Y gap only 2 mm.
-    for x in P.RIB_X:
-        for ya, yb in ((P.STAND_Y[0] + W, P.PLATE_Y[0]), (P.PLATE_Y[1], P.STAND_Y[1] - W)):
-            if yb - ya > 0.5:
-                part += Pos(x, (ya + yb) / 2, z0 + h / 2) * Box(W, yb - ya, h)
-    rx0, rx1 = P.STAND_X[0] + W, P.STAND_X[1] - W
-    for y in (P.PLATE_Y[0], P.PLATE_Y[1]):
-        part += Pos((rx0 + rx1) / 2, y, z0 + h / 2) * Box(rx1 - rx0, W, h)
+    # Locating ribs at the corners of the ST-Link footprint. The case drops in
+    # from above before the lid goes on, so it needs nothing more than this to
+    # stop it sliding around.
+    L, Wd, H = P.STLINK_CASE
+    cl = L + P.STLINK_HEADER_ROOM + P.STLINK_USB_ROOM
+    cw = Wd + 2 * P.STLINK_CLEAR
+    fz = z0 + P.STLINK_FLOOR_T
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cx = P.STLINK_X_CENTRE + sx * cl / 2
+            cy = P.STLINK_Y_CENTRE + sy * cw / 2
+            rz = fz + P.STLINK_RIB_H / 2          # Box centres on its Pos
+            part += Pos(cx + sx * 1.5, cy, rz) * Box(3.0, 14.0, P.STLINK_RIB_H)
+            part += Pos(cx, cy + sy * 1.5, rz) * Box(14.0, 3.0, P.STLINK_RIB_H)
 
-    # Clamp tower, sharing the shell's walls. Solid only in the top band that
-    # carries the nut channels and the deck; hollow below, divided by a cross
-    # rib so the cavity roof bridges about 13 mm rather than 30.
-    part += extrude(rrect(P.PEDESTAL_X, P.PEDESTAL_Y, P.PLATE_FILLET, z0),
-                    amount=P.TOWER_TOP_Z - z0)
-    tx, ty = P.PEDESTAL_X, P.PEDESTAL_Y
-    part -= extrude(rrect((tx[0] + W, tx[1] - W), (ty[0] + W, ty[1] - W), 2.0, z0 - 0.1),
-                    amount=P.TOWER_SOLID_Z - z0 + 0.1)
-    tcx, tcy = (tx[0] + tx[1]) / 2, (ty[0] + ty[1]) / 2
-    part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
-        Box(W, ty[1] - ty[0] - 2 * W, P.TOWER_SOLID_Z - z0)
-    part += Pos(tcx, tcy, (z0 + P.TOWER_SOLID_Z) / 2) * \
-        Box(tx[1] - tx[0] - 2 * W, W, P.TOWER_SOLID_Z - z0)
+    # USB cable, out through the +X wall at the case's own height
+    ch = H + 2 * P.STLINK_CLEAR
+    part -= Pos(P.STAND_X[1], 0, P.STLINK_TOP_Z - ch / 2) * \
+        Box(4 * W, P.STLINK_USB_W, P.STLINK_USB_H)
 
-    # Deck support. Printed as one part the deck has to bridge the bay, so the
-    # bay walls corbel inward over the last 6 mm -- a 45 degree underside, which
-    # needs no support -- taking the span from 34 mm to 22 mm. The probe tails
-    # reach y=+/-8.8, so 22 mm still clears them by 2.2 mm a side.
-    cz0, cz1 = P.WIRE_BAY_Z, z1
-    inx = (P.PLATE_X[0] + W, P.PLATE_X[1] - W)
-    y_lo, y_hi = P.PLATE_Y[1] - W, P.PLATE_Y[1] - W - P.DECK_CORBEL
-    band = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, cz0), amount=cz1 - cz0)
-    void = Pos((inx[0] + inx[1]) / 2, 0) * loft([
-        Plane.XY.offset(cz0) * Rectangle(inx[1] - inx[0], 2 * y_lo),
-        Plane.XY.offset(cz1) * Rectangle(inx[1] - inx[0], 2 * y_hi)])
-    part += band - void
-
-    # ST-Link floor, and the slide-in opening at the +X end. The case is
-    # captured sideways by the bay walls and from above by the corbel, which is
-    # narrower than the case is wide, so it cannot lift out.
-    part += extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0),
-                    amount=P.STLINK_FLOOR_T)
-    sl, sw, sh = P.STLINK_BODY
-    c = P.STLINK_CLEAR
-    part -= Pos((P.STLINK_X0 + sl) / 2 + 40.0, 0, P.STLINK_BAY_Z + (sh + c) / 2) * \
-        Box(sl + 80.0, sw + 2 * c, sh + c)
-
-    # loom exit -- now only the external 3.3 V feed; the SWD loom stays inside.
-    # It has to cut through the corbel as well as both walls.
+    # feed for the external 3.3 V supply, on the far side from the clamp
     zc = (P.WIRE_EXIT_Z[0] + P.WIRE_EXIT_Z[1]) / 2
     zh = P.WIRE_EXIT_Z[1] - P.WIRE_EXIT_Z[0]
-    ya, yb = y_hi - 1.0, P.STAND_Y[1] + 1.0
-    part -= Pos(0, (ya + yb) / 2, zc) * Box(P.WIRE_SLOT_W, yb - ya, zh)
-    for sy in (P.PLATE_Y[1] - W / 2, P.STAND_Y[1] - W / 2):
-        part += Pos(0, sy, zc) * Box(P.TIE_BAR_W, W, zh)
+    part -= Pos(0, P.STAND_Y[1], zc) * Box(P.WIRE_SLOT_W, 4 * W, zh)
     return part
 
 
-def build_body():
-    """Deck and stand as ONE printed part.
-
-    They were two, bolted together with four M3. With the ST-Link wired in
-    permanently they are never separated in service, so the screws bought
-    nothing. The cost is that the deck underside is now a bridge -- see the
-    corbel in build_stand -- and that recalibrating PIN_BORE_D means reprinting
-    the whole body, so confirm the bore with the fit gauge FIRST.
-    """
-    part = build_base_plate() + build_stand()
-
-    # Clamp mounting: four blind holes for M3 heat-set inserts, placed so the
-    # spindle lands on the cover's dimple. Fixed inserts give up the trim the
-    # slots allowed, so CLAMP_SPINDLE_TO_ROW has to be measured, not assumed.
-    for x, y in clamp_insert_xy():
-        part -= Pos(x, y, P.TOWER_TOP_Z - P.INSERT_M3_HOLE_DEPTH) * extrude(
-            Circle(P.INSERT_M3_HOLE_D / 2), amount=P.INSERT_M3_HOLE_DEPTH + 0.1)
-    return part
-
-
-# --------------------------------------------------------------- fit gauge --
 def build_fit_gauge():
     """Calibration coupon: one row of bores stepping through GAUGE_BORES.
 
@@ -359,7 +326,8 @@ def build_probes():
 
 
 PARTS_TO_BUILD = {
-    "body": build_body,
+    "base_plate": build_base_plate,
+    "stand": build_stand,
     "nest": build_nest,
     "cover": build_cover,
     "fit_gauge": build_fit_gauge,
@@ -371,7 +339,8 @@ def assembly(open_position=False):
     dz = P.TRAVEL if open_position else 0.0
     seat = P.NEST_T + dz
     a = {
-        "body": build_body(),
+        "base_plate": build_base_plate(),
+        "stand": build_stand(),
         "nest": Pos(0, 0, dz) * build_nest(),
         "cover": Pos(0, 0, seat + P.PCB_T) * build_cover(),
         "pcb": G.pcba_solid(seat),
