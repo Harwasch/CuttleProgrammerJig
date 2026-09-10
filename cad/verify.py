@@ -192,9 +192,10 @@ def main():
           f"lead {P.PIN_LEAD_D} mm into bore {P.PIN_BORE_D} mm")
 
     # Full chain from the board's pad to the probe tip, stated link by link.
-    # With the locators on the base plate the board registers straight to the
-    # part that holds the probes, so the nest contributes nothing: no
-    # nest-on-posts play and no nest-mounted-pin print error.
+    # The locators are on the base plate, so the board registers straight to the
+    # part that holds the probes and the nest contributes nothing. Putting them
+    # on the nest instead would add its pin print error and its play on the
+    # register pins -- measured at +0.232 mm worst case, over the pad budget.
     pin_clear = (2.2 - P.LOCATOR_D) / 2
     arm = max(math.hypot(t["x"], t["y"]) for t in G.TEST_POINTS)
     span = math.dist(G.HOLES[P.LOCATOR_PRIMARY[0]], G.HOLES[P.LOCATOR_PRIMARY[1]])
@@ -241,15 +242,26 @@ def main():
           f"{P.INSERT_M3_HOLE_DEPTH} mm hole for a {P.INSERT_M3_H} mm insert")
     check("hole diameter suits the insert knurl", 3.85 <= P.INSERT_M3_HOLE_D <= 4.15,
           f"O{P.INSERT_M3_HOLE_D} mm, between the 3.9 tip and 4.5 knurl")
-    # the spindle must land on the cover's dimple, not just somewhere on it
-    dim_x = sum(p[0] for p in P.COVER_PADS) / len(P.COVER_PADS)
-    dim_y = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    # the spindle must land on the cover's dimple, not just somewhere on it.
+    # Tolerance is 0.5 mm on BOTH axes: the old check allowed COVER_DIMPLE_R of
+    # X error, which passed a 3.6 mm miss when the dimple moved.
+    dim_x, dim_y = P.COVER_DIMPLE_XY
     near_row = max(y for _, y in ins)
     land_y = near_row + P.CLAMP_SPINDLE_TO_ROW
     land_x = sum(x for x, _ in ins) / len(ins)
     check("spindle lands on the cover dimple",
-          abs(land_y - dim_y) < 0.5 and abs(land_x - dim_x) < P.COVER_DIMPLE_R,
+          abs(land_y - dim_y) < 0.5 and abs(land_x - dim_x) < 0.5,
           f"spindle at ({land_x:.2f},{land_y:.2f}), dimple at ({dim_x:.2f},{dim_y:.2f})")
+    # ...and the dimple must sit on the centre of the post/spring quad, so the
+    # nest descends parallel instead of levering onto one row of springs
+    qx = sum(x for x, _ in P.POST_XY) / len(P.POST_XY)
+    qy = sum(y for _, y in P.POST_XY) / len(P.POST_XY)
+    off = math.hypot(dim_x - qx, dim_y - qy)
+    xs = sorted(set(x for x, _ in P.POST_XY))
+    far = (dim_x - xs[0]) / (xs[1] - xs[0])
+    check("press point is on the centre of the spring quad", off < 1.0,
+          f"{off:.2f} mm off ({qx:+.1f},{qy:+.1f}); "
+          f"spring load splits {1-far:.0%}/{far:.0%}")
     check("clamp body clears the guide posts in X",
           all(abs(land_x - px) > P.CLAMP_BASE_W / 2 or abs(py) > 12
               for px, py in P.POST_XY),
@@ -301,33 +313,65 @@ def main():
         widest = 3.0 if thin is None else thin
         check(f"nest {nm2:12s} cross-section has no thin walls", widest >= 2.0,
               f"survives a {widest:.1f} mm erosion")
-    check("board rests on all four main-section holes",
-          len(P.LOCATOR_PRIMARY) + len(P.LOCATOR_SECONDARY) == 4,
-          f"{len(P.LOCATOR_PRIMARY)} locating + {len(P.LOCATOR_SECONDARY)} supporting pins")
-    # the pins must belong to the base plate, and the nest must merely clear them
-    for grp, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
-                     (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
-        for name in grp:
-            x, y = G.HOLES[name]
-            core = Pos(x, y, P.LOCATOR_TOP_Z - 1.5) * extrude(
-                Circle(dia / 2 - 0.2), amount=1.0)
-            got = vol(base.intersect(core))
-            check(f"{name} pin stands on the base plate",
-                  got > 0.9 * core.volume,
-                  f"{100 * got / core.volume:.0f}% solid at z="
-                  f"{P.LOCATOR_TOP_Z - 1.0:.1f} mm")
-            through = Pos(x, y, -0.1) * extrude(
-                Circle(dia / 2 + 0.05), amount=P.NEST_T + P.NEST_LIP + 0.2)
-            check(f"{name} passes through the nest cleanly",
-                  vol(nest.intersect(through)) < 0.02,
-                  f"{vol(nest.intersect(through)):.4f} mm3 in the way")
-    engage = (P.LOCATOR_TOP_Z - (P.NEST_T + P.TRAVEL))
-    check("pins still engage the board with the clamp open", engage >= 2.5,
-          f"{engage:.2f} mm of pin above the board underside at rest")
-    check("nest recess cannot fight the base-plate pins",
-          P.NEST_LIP_CLEAR > (P.POST_HOLE_D - P.POST_D) / 2 + 0.15,
-          f"recess clearance {P.NEST_LIP_CLEAR:.2f} mm vs nest play "
-          f"{(P.POST_HOLE_D - P.POST_D) / 2:.2f} mm")
+    check("two locating pins fully constrain the board",
+          len(P.LOCATOR_PRIMARY) == 2,
+          f"{len(P.LOCATOR_PRIMARY)} pins, {P.LOCATOR_SECONDARY or 'no'} secondary")
+    # the pins belong to the base plate; the nest must merely clear them
+    for name in P.LOCATOR_PRIMARY:
+        x, y = G.HOLES[name]
+        core = Pos(x, y, P.LOCATOR_TOP_Z - 2.0) * extrude(
+            Circle(P.LOCATOR_D / 2 - 0.2), amount=1.0)
+        got = vol(base.intersect(core))
+        check(f"{name} pin stands on the base plate", got > 0.9 * core.volume,
+              f"{100 * got / core.volume:.0f}% solid at z="
+              f"{P.LOCATOR_TOP_Z - 1.5:.1f} mm")
+        through = Pos(x, y, -0.1) * extrude(
+            Circle(P.LOCATOR_SHANK_D / 2 + 0.10), amount=P.NEST_T + P.NEST_LIP + 0.2)
+        check(f"{name} passes through the nest cleanly",
+              vol(nest.intersect(through)) < 0.02,
+              f"Ø{P.LOCATOR_SHANK_D + 0.20:.2f} swept through: "
+              f"{vol(nest.intersect(through)):.4f} mm3 in the way")
+        # the seat must survive the shank clearance hole cut through it
+        ann = G.boss_radius(name) - P.LOCATOR_NEST_HOLE_D / 2
+        check(f"{name} seat survives the shank clearance", ann >= 0.8,
+              f"Ø{2*G.boss_radius(name):.2f} boss leaves a {ann:.2f} mm annulus")
+    # the shank must stop at or below the seat, or it fouls the board underside
+    check("locator shank stops at the seat", P.LOCATOR_SHANK_D > P.LOCATOR_D,
+          f"Ø{P.LOCATOR_SHANK_D:.2f} to z={P.NEST_T:.1f}, then Ø{P.LOCATOR_D:.2f}")
+    free = P.LOCATOR_TOP_Z - P.NEST_T
+    check("locator tip is not slender", free / P.LOCATOR_D <= 3.5,
+          f"{free:.1f} mm of Ø{P.LOCATOR_D:.2f} standing proud, "
+          f"{free/P.LOCATOR_D:.1f}:1 (was {P.LOCATOR_TOP_Z/P.LOCATOR_D:.1f}:1 unstepped)")
+    engage = (P.LOCATOR_TOP_Z - (P.NEST_T + P.TRAVEL + P.PCB_T))
+    check("pins still stand proud of the board with the clamp open", engage >= 1.0,
+          f"{engage:.2f} mm of pin above the board top at rest")
+
+    # ---- nest registration: two pins, not the four over-constrained posts ----
+    post_play = (P.POST_HOLE_D - 0.22 - (P.POST_D + 0.08)) / 2
+    reg_play = (P.REG_HOLE_D - 0.22 - (P.REG_PIN_D + 0.08)) / 2
+    check("guide posts are free as printed, not a press fit", post_play >= 0.15,
+          f"{2*post_play:.2f} mm diametral as printed "
+          f"({P.POST_HOLE_D - P.POST_D:.2f} modelled)")
+    check("registration is tighter than the posts it replaces", reg_play < post_play,
+          f"register {2*reg_play:.2f} mm vs post {2*post_play:.2f} mm diametral")
+    check("registration pins stay engaged over the whole lift",
+          P.REG_PIN_CYL_Z - P.TRAVEL >= 1.5,
+          f"{P.REG_PIN_CYL_Z - P.TRAVEL:.2f} mm of cylinder still in the nest at rest")
+    for i, (x, y) in enumerate(P.REG_XY):
+        core = Pos(x, y, P.REG_PIN_CYL_Z - 1.5) * extrude(
+            Circle(P.REG_PIN_D / 2 - 0.2), amount=1.0)
+        got = vol(base.intersect(core))
+        check(f"register pin {i+1} stands on the base plate", got > 0.9 * core.volume,
+              f"{100 * got / core.volume:.0f}% solid at ({x:+.1f},{y:+.1f})")
+        hole = Pos(x, y, -0.1) * extrude(
+            Circle(P.REG_PIN_D / 2 + 0.05), amount=P.NEST_T + P.NEST_LIP + 0.2)
+        check(f"register pin {i+1} passes through the nest",
+              vol(nest.intersect(hole)) < 0.02,
+              f"Ø{P.REG_PIN_D + 0.10:.2f} swept through: "
+              f"{vol(nest.intersect(hole)):.4f} mm3 in the way")
+    check("registration pins clear the board outline",
+          all(not G.OUTLINE.buffer(0.5).contains(Point(x, y)) for x, y in P.REG_XY),
+          "both outboard of the board in Y")
     mx, my, ms, mh = P.MCU_BOSS
     check("MCU boss stops short of the package", P.MCU_BOSS_CLEAR > 0,
           f"{P.MCU_BOSS_CLEAR} mm below a {mh} mm package -- backs the board "

@@ -4,13 +4,14 @@ Four printed parts:
   base_plate  precision part -- 7 probe bores, 4 guide posts, spring pockets
   stand       one piece: open frame under the plate plus the clamp tower
   nest        floating board carrier, rides the posts on springs
-  cover       hold-down that presses only on bare board, guided by two posts
+  cover       hold-down that presses only on bare board, guided by all four
+              posts and pressed on the centre of the post/spring quad
 
 Run:  python3 jig.py            -> writes STEP + STL into cad/out/
 """
 import os
 from build123d import *
-from shapely.geometry import Point
+from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
 import params as P
@@ -61,28 +62,29 @@ def build_base_plate():
         part -= p * Pos(0, 0, z0 - 0.1) * extrude(
             Circle(P.PIN_CLEAR_D / 2), amount=clr_top - z0 + 0.1)
 
-    # Board locators. These stand on the base plate, not the nest, so the board
-    # registers straight to the part that carries the probes; the nest just
-    # passes them through. They carry no load -- the guide posts take the
-    # springs -- so a slender printed pin is adequate.
-    pins = []
-    for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
-                       (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
-        for name in names:
-            x, y = G.HOLES[name]
-            part += Pos(x, y) * extrude(Circle(dia / 2), amount=P.LOCATOR_TOP_Z)
-            pins.append((x, y))
-    # lead-in on the pin tops, selected by position -- the guide posts are
-    # taller, so a plain "highest circular edge" pick would grab those instead
-    # NB: Edge.center() on a circular edge returns a point ON the circle, not
-    # its axis -- arc_center is what identifies the pin.
-    tips = [e for e in part.edges().filter_by(GeomType.CIRCLE)
-            if abs(e.arc_center.Z - P.LOCATOR_TOP_Z) < 0.01
-            and any(abs(e.arc_center.X - x) < 0.01 and abs(e.arc_center.Y - y) < 0.01
-                    for x, y in pins)]
-    if len(tips) != len(pins):
-        raise RuntimeError(f"expected {len(pins)} pin tips, selected {len(tips)}")
-    part = chamfer(tips, 0.4)
+    # Nest registration. The four guide posts are deliberately loose now -- four
+    # posts in four holes is over-constrained and binds on any print-scaling
+    # difference -- so the nest is located by exactly two features instead: a
+    # round pin at the primary and the same pin in a slot at the secondary.
+    # That is kinematically exact, so scale error slides the slot along its own
+    # axis rather than jamming the pair. Ø4 x 6.5 mm is 1.6:1, not the 5.7:1 of
+    # the board locators that used to stand here.
+    for x, y in P.REG_XY:
+        part += Pos(x, y) * extrude(Circle(P.REG_PIN_D / 2), amount=P.REG_PIN_CYL_Z)
+        part += Pos(x, y, P.REG_PIN_CYL_Z) * extrude(
+            Circle(P.REG_PIN_D / 2),
+            amount=P.REG_PIN_TOP_Z - P.REG_PIN_CYL_Z, taper=30)
+
+    # Board locators, stepped. Everything below the seat -- which the board can
+    # never reach, because the nest bottoms there -- is Ø3.00, so only the last
+    # 6 mm stands as Ø2.10. See LOCATOR_SHANK_D for why that matters.
+    for name in P.LOCATOR_PRIMARY:
+        x, y = G.HOLES[name]
+        part += Pos(x, y) * extrude(Circle(P.LOCATOR_SHANK_D / 2), amount=P.NEST_T)
+        part += Pos(x, y, P.NEST_T) * extrude(
+            Circle(P.LOCATOR_D / 2), amount=P.LOCATOR_TOP_Z - P.NEST_T - 0.6)
+        part += Pos(x, y, P.LOCATOR_TOP_Z - 0.6) * extrude(
+            Circle(P.LOCATOR_D / 2), amount=0.6, taper=30)
 
     for x, y in P.MOUNT_SCREW_XY:
         part -= Pos(x, y, z0 - 0.1) * extrude(
@@ -102,7 +104,9 @@ def build_nest():
     without lifting it off its seat.
 
     The board's locating pins stand on the base plate and pass through this
-    part; the nest positions nothing.
+    part, so the board registers straight to the part that holds the probes.
+    The nest is itself registered to the base by two dedicated pins rather than
+    by the springs' guide posts, which are now deliberately loose.
     """
     top = P.NEST_T + P.NEST_LIP
     part = extrude(rrect(P.NEST_X, P.NEST_Y, P.NEST_FILLET), amount=top)
@@ -125,14 +129,25 @@ def build_nest():
         part -= Pos(x, y) * extrude(Circle(P.SPRING_POCKET_D / 2),
                                     amount=P.NEST_SPRING_DEPTH)
 
-    # The locator pins belong to the base plate now, so the nest only has to let
-    # them through. Clearance covers the nest's own play on the guide posts.
-    for names, dia in ((P.LOCATOR_PRIMARY, P.LOCATOR_D),
-                       (P.LOCATOR_SECONDARY, P.LOCATOR_D2)):
-        for name in names:
-            x, y = G.HOLES[name]
-            part -= Pos(x, y, -0.1) * extrude(
-                Circle(dia / 2 + P.LOCATOR_NEST_CLEAR), amount=top + 0.2)
+    # Registration to the base plate: a round hole at the primary pin, and the
+    # same hole stretched into a slot along the line joining the two at the
+    # secondary. Both sit outboard of the board outline in Y, so they never
+    # break into the board recess.
+    (x0, y0), (x1, y1) = P.REG_XY
+    part -= Pos(x0, y0, -0.1) * extrude(Circle(P.REG_HOLE_D / 2), amount=top + 0.2)
+    ux, uy = x1 - x0, y1 - y0
+    n = (ux * ux + uy * uy) ** 0.5
+    ux, uy = ux / n * P.REG_SLOT_EXTRA / 2, uy / n * P.REG_SLOT_EXTRA / 2
+    slot = LineString([(x1 - ux, y1 - uy), (x1 + ux, y1 + uy)]).buffer(
+        P.REG_HOLE_D / 2, G.ARC_SEGS)
+    part -= extrude(G.sk(slot, Plane.XY.offset(-0.1)), amount=top + 0.2)
+
+    # Pass-through for the base plate's stepped board locators. One straight
+    # hole clears the Ø3.00 shank low down and the Ø2.10 tip higher up.
+    for name in P.LOCATOR_PRIMARY:
+        x, y = G.HOLES[name]
+        part -= Pos(x, y, -0.1) * extrude(
+            Circle(P.LOCATOR_NEST_HOLE_D / 2), amount=top + 0.2)
     return part
 
 
@@ -153,9 +168,10 @@ def build_cover():
               P.COVER_PAD_H + P.COVER_T / 2) * Box(16.0, P.COVER_TAB_L + 2, P.COVER_T)
     part += tab
 
-    # dimple at the centroid of the contact pads: where the clamp spindle lands
-    cxp = sum(p[0] for p in P.COVER_PADS) / len(P.COVER_PADS)
-    cyp = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    # Dimple on the centroid of the post/spring quad: where the clamp spindle
+    # lands. Pressing on the pad centroid instead put the load 15.45 mm off
+    # centre and split the spring set 75/25, so the nest levered down.
+    cxp, cyp = P.COVER_DIMPLE_XY
     top = P.COVER_PAD_H + P.COVER_T
     part -= Pos(cxp, cyp, top) * Sphere(P.COVER_DIMPLE_R)
 
@@ -188,9 +204,9 @@ def clamp_insert_xy():
     the cover's contact pads -- worked back through the clamp's own geometry,
     rather than simply centred on the deck.
     """
-    dimple_y = sum(p[1] for p in P.COVER_PADS) / len(P.COVER_PADS)
+    dimple_x, dimple_y = P.COVER_DIMPLE_XY
     near = dimple_y - P.CLAMP_SPINDLE_TO_ROW
-    cx = (P.PEDESTAL_X[0] + P.PEDESTAL_X[1]) / 2
+    cx = dimple_x
     return [(cx + sx * P.CLAMP_HOLE_DX / 2, near - sy * P.CLAMP_HOLE_DY)
             for sx in (-1, 1) for sy in (0, 1)]
 

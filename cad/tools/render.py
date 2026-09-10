@@ -206,7 +206,7 @@ VIEWS = {
     "stand_top":       ([("stand", 0)], 20, 62,
                         "stand from above - board bay, clamp tower, tie-off ribs"),
     "nest_top":        ([("nest", 0)], 30, 52,
-                        "nest - six seat bosses, one relief pocket, four locator pins",
+                        "nest - six seat bosses, one relief pocket, no pins of its own",
                         (-14.0, 0.0, 5.0, 42.0)),
     "nest_probes":     ([("nest", 0)], 26, 46,
                         "nest, probe end - MCU backing boss inside the pocket",

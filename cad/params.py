@@ -72,10 +72,28 @@ PART_CLEAR_Z         = 0.40    # vertical clearance under bottom-side parts
 
 # ------------------------------------------------- guide posts + springs -----
 POST_D               = 5.00    # guide post diameter
-POST_HOLE_D          = 5.30    # matching hole in the nest and the cover
+# Four posts in four holes is over-constrained: any difference in print scaling
+# between the two parts binds them however round the holes are. The old 5.30
+# left 0.30 mm modelled, which this printer's 0.22 mm hole shrink and ~0.08 mm
+# boss growth consumed exactly -- an as-printed line-to-line press fit. The
+# posts now only guide and carry the springs; REG_* below does the locating.
+POST_HOLE_D          = 5.80    # ~0.50 mm diametral as printed, 0.25 radial
 POST_TOP_Z           = 16.00   # post top, tall enough to guide the cover
 POST_XY              = [(-38.0, 8.5), (-38.0, -8.5),
                         ( 24.0, 8.5), ( 24.0, -8.5)]
+
+# ------------------------------------------- nest-to-base registration -----
+# Two pins, not four posts: a round hole at the primary and a slot at the
+# secondary is kinematically exact, so a print-scaling difference between the
+# parts shifts the slot along its axis instead of jamming. The pins stand on
+# the base plate and stay engaged over the whole 3 mm lift.
+REG_PIN_D            = 4.00    # pin on the base plate
+REG_HOLE_D           = 4.45    # nest hole; ~0.15 mm diametral as printed
+REG_SLOT_EXTRA       = 0.80    # secondary hole stretched this much along the
+                               # line joining the two, absorbing scale error
+REG_PIN_CYL_Z        = 5.00    # cylindrical up to here...
+REG_PIN_TOP_Z        = 6.50    # ...then a cone to here, as a lead-in
+REG_XY               = [(-45.0, 14.5), (35.0, -14.5)]   # primary first
 
 SPRING_WIRE_D        = 0.60    # 0.6 x 7 mm compression spring from the kit
 SPRING_OD            = 7.00
@@ -92,8 +110,13 @@ NEST_SPRING_DEPTH    = 3.00    # counterbore in the nest underside
 # The board's top side is densely populated over the probe cluster, so the
 # hold-down lands on five small pads chosen to sit clear of every part and of
 # the board edge, with their centroid close to the probe force centroid.
+# The first five sit over the dense probe end, found by search. The last four
+# are in the bare strip from x=-4 to +15 and exist to bracket the press point
+# at x=-7, so the hold-down load lands either side of it instead of all inboard.
 COVER_PADS           = [(-28.30, -6.05), (-27.55, -1.30), (-27.30, 6.95),
-                        (-14.80,  7.95), (-14.30, -8.05)]
+                        (-14.80,  7.95), (-14.30, -8.05),
+                        (  1.00,  7.50), (  1.00, -7.50),
+                        (  7.50,  7.50), (  7.50, -7.50)]
 COVER_PAD_R          =   1.60  # hold-down contact pad radius
 COVER_PAD_H          =   1.80  # standoff; tallest top part under the cover is 1.29 mm
 COVER_LEADIN         =   1.00  # chamfer on the guide holes: only 5.8 mm of the
@@ -114,14 +137,28 @@ COVER_LEADIN         =   1.00  # chamfer on the guide holes: only 5.8 mm of the
 # All four main-section holes are used. Two locate (full size, diagonal pair,
 # 29.6 mm apart for the least angular error); the other two are undersize so
 # they cannot fight the first two if print and board tolerances disagree.
-LOCATOR_D            = 2.10    # primary pins, into the board's 2.2 mm holes
-LOCATOR_D2           = 1.80    # secondary pins, engage without constraining
+# STEPPED. A pin on the base plate has to stay in the board at both ends of the
+# 3 mm lift, so its tip must reach z=12 while the board drops to z=6 -- as a
+# plain Ø2.10 column that is 12 mm of 5.7:1 and it snaps. Fattening everything
+# below the seat to Ø3.00 leaves only 6 mm of Ø2.10 standing proud: 2.9:1, and
+# about 8x the stiffness at the tip. The alternative, moving the pins onto the
+# nest, makes them short but adds the nest's own position to the chain that
+# decides where a probe lands -- measured at +0.232 mm worst case, which is
+# what takes it over the 0.500 mm pad budget.
+LOCATOR_D            = 2.10    # tip, into the board's 2.2 mm holes
+LOCATOR_SHANK_D      = 3.00    # below the seat, where the board never reaches
+LOCATOR_NEST_HOLE_D  = 3.40    # nest pass-through; clears the shank
+LOCATOR_D2           = 1.80    # secondary pins -- none fitted, see below
 LOCATOR_TOP_Z        = 12.00   # pin top; board underside is 9.0 at rest, so
                                # this keeps 3 mm engaged with the clamp open
 LOCATOR_NEST_CLEAR   = 0.35    # radial clearance in the nest's pass-through,
                                # covering the nest's own play on the posts
 LOCATOR_PRIMARY      = ["MH1", "MH4"]
-LOCATOR_SECONDARY    = ["MH2", "MH3"]
+# No secondary pins. At Ø1.80 in a Ø2.2 hole they carried 0.20 mm of radial
+# slop and located nothing, and MH2's seat boss is only Ø4.23 -- a Ø3.40 shank
+# clearance would leave a 0.41 mm annulus and destroy the seat. MH2 and MH3
+# stay plain bosses; MH1 and MH4 alone fully constrain the board.
+LOCATOR_SECONDARY    = []
 SEAT_BOSSES          = ["MH1", "MH2", "MH3", "MH4", "MH5", "MH6"]
 BOSS_R_MAX           = 4.00    # capped; each boss also respects its own
 BOSS_PART_CLEAR      = 0.30    # clearance to the nearest bottom-side part
@@ -136,7 +173,7 @@ PROBE_CLEAR_D        = 4.00    # holes for the base's probe islands
 
 # ------------------------------------------------------------- nest plate ---
 NEST_X               = (-58.0, 55.0)
-NEST_Y               = ( -15.0, 15.0)
+NEST_Y               = ( -19.0, 19.0)
 NEST_FILLET          =   3.0
 
 # ------------------------------------------------------------- base plate ---
@@ -169,10 +206,16 @@ WIRE_SLOT_W          =  20.0
 
 # ----------------------------------------------------------------- cover ----
 COVER_T              =   4.0   # hold-down cover thickness
-COVER_POSTS          = [(-38.0, 8.5), (-38.0, -8.5)]     # cover rides these
-COVER_MARGIN         =   4.0
+COVER_POSTS          = POST_XY                           # cover rides all four
+COVER_MARGIN         =   7.0   # 4.0 left only 1.35 mm of wall outside a post
+                               # hole; 7.0 leaves 4.1 mm
 COVER_TAB_L          =   9.0   # lift-off grip tab
-COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip, at the pad centroid
+COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip
+# Press on the centroid of the post/spring quad, not on the centroid of the
+# contact pads. Off-centre the spring set loads unevenly -- at the old x=-22.45
+# it was 75/25 between the two post rows, so the nest levered down instead of
+# descending parallel.
+COVER_DIMPLE_XY      = (-7.0, 0.0)
 
 # --------------------------------------------------------------- geometry ---
 # The stand is one full rectangle, not an L: the board bay and the clamp bay
@@ -180,7 +223,7 @@ COVER_DIMPLE_R       =   4.0   # seat for the clamp spindle tip, at the pad cent
 # double as a parts tray.
 STAND_X              = (-70.0, 67.0)
 STAND_Y              = (-56.0, 27.0)
-PEDESTAL_X           = (-44.0,  -6.0)
+PEDESTAL_X           = (-26.0,  12.0)
 PEDESTAL_Y           = (-56.0, -21.0)
 # Ribs must miss the loom run: the probe cluster is at x -32..-17 and the exit
 # at x +/-10, so a rib at x -4 sat right in the path.
