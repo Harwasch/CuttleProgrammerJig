@@ -50,7 +50,7 @@ this matters more than which printer you pick.
 
 **The base plate is the only part where precision matters.** It carries the
 seven Ø1.2 mm probe bores, four guide posts, two stepped board locators and two
-registration pins, and it is 121 cm³. Run it at 0.12–0.15 mm layers on whichever
+registration pins, and it is 122 cm³. Run it at 0.12–0.15 mm layers on whichever
 machine you trust most for small features. If you have a **0.2 mm nozzle**, this
 is the part worth the extra time.
 
@@ -87,10 +87,13 @@ all pointing up), `stand` on its own base, `nest` lip up, `cover` **pads up**
 (inverted from how it is modelled).
 
 In those orientations every feature is a vertical wall or a vertical hole. The
-largest unsupported span anywhere is **11.5 mm**, the roof of the clamp tower's
-cavity, which bridges without help. `verify.py` measures the largest circle that
-fits inside every downward face — the distance filament actually spans — and
-requires it to be under 25 mm.
+largest unsupported span anywhere is **12.0 mm**, the roof of the clamp tower's
+cavity, which bridges without help. The next is the cover's spindle dish at
+5.7 mm. `verify.py` measures the largest circle that fits inside every downward
+face — the distance filament actually spans — and requires it to be under
+25 mm. It considers **every** face whose normal falls past 45°, not just
+exactly-horizontal planes: filtering on planes alone made the dimple invisible,
+and it could be opened into a hole clean through the cover with no complaint.
 
 ## Calibrate the probe bores first
 
@@ -98,16 +101,29 @@ There is no drilling. The probe bores print to final size — but FDM renders a
 small vertical hole undersize by an amount specific to your printer, nozzle,
 material and speed, so you calibrate once:
 
-1. Print `fit_gauge.stl` (80 × 14 mm, about 20 minutes) in the **same material
-   and profile** you will use for the base plate. It has ten bores labelled
-   90 to 135, in hundredths of a millimetre.
-2. Try an R50 sleeve in each. You want the smallest hole it enters with firm
-   thumb pressure and does not rattle in. The answer must have a bore that is
-   too tight below it **and** a bore that is visibly loose above it — if the
-   sleeve only enters the largest hole, the range has not bracketed your
-   printer and you need to shift `GAUGE_BORES` up and print again.
-3. Put that number in `PIN_BORE_D` in [`cad/params.py`](../cad/params.py) and
-   run `python3 jig.py`.
+1. Print `fit_gauge.stl` (80 × 14 × 5 mm, about 10 minutes) in the **same
+   material and profile** you will use for the base plate. It has ten **blind
+   counterbores 2.5 mm deep** labelled 90 to 135, in hundredths of a
+   millimetre.
+
+   The depth matters: 2.5 mm is one receptacle head, so the coupon reproduces
+   exactly the feature it is calibrating. It used to be an 11 mm through hole
+   for what is a 2.5 mm counterbore — a deeper hole tapers more and reads
+   tighter, biasing the one measurement the whole design hangs on.
+2. Press an R50 sleeve into each. You want the smallest bore whose **head seats
+   flush** with a firm thumb push and does not rattle. The answer must have a
+   bore too tight below it **and** one visibly loose above it — if the sleeve
+   only enters the largest, the range has not bracketed your printer and you
+   need to shift `GAUGE_BORES` up and print again.
+3. Put that number in `PIN_BORE_D` in [`cad/params.py`](../cad/params.py),
+   set `PRINT_HOLE_SHRINK` to `PIN_BORE_D` minus your sleeve's measured head
+   diameter, and run `python3 jig.py`.
+
+   **Both, together.** `PRINT_HOLE_SHRINK` is what every other fit in the
+   design is computed from — the guide posts, the registration pins, the
+   locator shanks, the heat-set insert holes. It used to be a literal buried
+   inside `verify.py`, so recalibrating for a new printer silently left all of
+   them sized for the old one.
 
 The value shipped here, **1.20**, is a measured result, not a default: on the
 machine and profile it was taken from, the sleeve entered the 120 bore and
@@ -117,19 +133,31 @@ sleeve head. That is more shrink than a typical PLA profile gives (0.08 to
 0.14 mm), so treat it as a starting point on any other machine, nozzle,
 material or speed and re-run the gauge.
 
-The bore is 9 mm long on a 17.5 mm sleeve, so even a sloppy fit barely moves
-the tip: at 0.04 mm of play the probe lands 0.035 mm off, inside a chain that
-totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
-`verify.py` prints every link in that chain.
+### The bore is stepped, and that is what sets the probe height
+
+A counterbore exactly one head deep (2.5 mm) sits over a bore sized for the
+sleeve's **body**. The head cannot enter the body bore, so it bottoms with its
+top flush with the platform — the sleeve's Z is geometry, not how hard you
+pushed.
+
+That matters more than it sounds. `PIN_PROTRUSION` is the number the entire
+stack-up derives from, and until this was stepped the lead-in printed at Ø1.18
+and the bore at Ø0.98 — both at or over the Ø0.98 head — so the sleeve slid
+straight through and its height was set by feel.
+
+The body bore then guides the 15 mm body over 8 mm at 0.020 mm radial, which is
+what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
+0.194 mm RSS against a 0.500 mm budget; `verify.py` prints every link.
 
 ## Assembly
 
 1. Calibrate `PIN_BORE_D` with the gauge, measure your ST-LINK/V2 into
-   `STLINK_BODY`, and only then print the parts.
-2. Push an **R50-2S sleeve** into each bore from the top, tail first, through
-   the Ø1.4 mm lead-in, until its top is flush with the platform. The tail then
-   projects 5.7 mm below the deck into the wire bay. The bore locates the
-   sleeve; it does not necessarily retain it — see Wiring.
+   `STLINK_CASE`, and only then print the parts.
+2. Press an **R50-2S sleeve** into each bore from the top, tail first, until
+   its head bottoms in the counterbore — its top will then be flush with the
+   platform. The tail projects 5.7 mm below the deck into the wire bay. The
+   counterbore locates and grips it; it does not necessarily retain it against
+   a pull — see Wiring.
 3. With the plate **off the stand and turned upside down**, solder a wire to
    each sleeve tail, then wick a drop of thin CA into each sleeve/bore joint to
    lock it. Label the wires as you go.
@@ -158,10 +186,16 @@ totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
    M3 self-tapped into PETG does not survive many cycles. The clamp load is
    internal anyway — the spindle presses the cover down, the springs push the
    plate down by the same amount — so the screws only stop the lid shifting.
-7. Drop a spring into each of the four counterbores, over the guide posts, then
+7. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
+   stand 3.35 mm proud of the platform.
+
+   This has to happen **before** the nest goes on: once it does, each sleeve
+   top is at the bottom of a Ø4 hole 6.8 mm down, and with the board over it
+   there is no way to push a Ø0.68 probe in axially.
+8. Drop a spring into each of the four counterbores, over the guide posts, then
    lower the `nest` on. It passes over the two locator pins and the two
    registration pins without touching either.
-8. The board drops onto the **base plate's** locator pins, through the nest, and
+9. The board drops onto the **base plate's** locator pins, through the nest, and
    seats on six nest bosses — one at each of its own mounting holes — plus the
    SWD tab and both flex necks, which carry no bottom-side parts at all. MH1 and
    MH4 at Ø2.10 locate it; there are no secondary pins.
@@ -170,8 +204,7 @@ totals 0.444 mm worst case and 0.194 mm RSS against a 0.500 mm budget.
    to the part that holds the probes: worst case 0.444 mm rather than 0.676 mm,
    against 0.5 mm of usable pad. They are stepped — Ø3.00 up to the seat, then
    Ø2.10 — so only 6 mm stands proud, at 2.9:1 rather than 5.7:1.
-9. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
-   stand 3.35 mm proud of the platform.
+
 10. Adjust the clamp spindle. It presses **downward** from the clamp's mounting
    plane, and the deck sits at z = 20 mm against a cover top of 13.4 mm, so the
    spindle should end up about 6.6 mm proud — mid-range on its thread. Set it so
@@ -203,7 +236,7 @@ solder joints, should take any pull on the cable.
 | 4 | SWO | SWO | optional, trace output |
 | 5 | GND | GND | also the 3.3 V supply return |
 | 6 | VDD_3V3 | VDD / VAPP sense | |
-| 7 | VDD_3V3 | 3.3 V supply | second pin doubles the current capacity |
+| 7 | VDD_3V3 | external 3.3 V feed | second pin doubles the current capacity. The ST-LINK/V2's VAPP pins are a voltage **sense** input — the dongle does not source power, so this comes in through the wall slot |
 
 **Power:** feeding the VDD_3V3 test points back-powers the board's 3.3 V rail
 directly, downstream of its own regulator. Do not apply VIN at the same time
@@ -245,17 +278,24 @@ number sets the platform height and therefore the probe compression; the
 verification script re-derives everything from it. If your probes measure,
 say, 3.6 mm, the platform simply drops 0.25 mm.
 
-**`PIN_BORE_D` (1.20 mm)** — calibrated from the fit gauge, as above. This is
-the one number that depends on your printer rather than on the parts, and the
-only one you must re-measure if you change machine, nozzle or material.
+**`PIN_BORE_D` (1.20 mm) and `PRINT_HOLE_SHRINK` (0.22 mm)** — calibrated
+together from the fit gauge, as above. These are the two numbers that depend on
+your printer rather than on the parts, and every other fit in the design is
+computed from the second one.
 
-**Known residual risk, not designed out:** the probe bore is Ø1.2 × 9 mm, a
-7.5:1 aspect vertical hole, which is what FDM is least good at. The gauge
-calibrates diameter but will not catch a bore that comes out tapered down its
-depth. If a sleeve enters the gauge cleanly but will not seat fully in the
-plate, that is the cause — shorten `PIN_BORE_L` to 6 mm and reprint the
-plate; the cost is 0.007 mm of extra probe tilt, which is nothing against the
-0.444 mm budget.
+**Known residual risk, not designed out:** the body bore is Ø1.12 × 8 mm, a
+7:1 aspect vertical hole, which is what FDM is least good at. The gauge
+calibrates the counterbore but says nothing about whether the bore beneath it
+comes out tapered. If a sleeve seats cleanly in the gauge but will not bottom
+in the plate, that is the cause — shorten `PIN_BORE_L` to 6 mm and reprint the
+plate; the cost is 0.006 mm of extra probe tilt against a 0.500 mm budget.
+
+**Two probe collars are thin by necessity.** SWDIO and SWCLK sit 0.95 and
+1.05 mm from the inflated footprint of the tallest bottom-side component, so
+their collars are 0.35 and 0.45 mm on that side over the top 0.8 mm — about one
+extrusion. Two thirds of each counterbore is still fully enclosed. This is set
+by where the component actually is, not by a choice in the model; the other
+five collars are the full Ø3.0.
 
 **`CLAMP_SPINDLE_TO_ROW` (24.6 mm) — measure this before printing the plate.**
 It is the distance from the spindle axis to the nearer of the two mounting-hole

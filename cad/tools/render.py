@@ -212,8 +212,8 @@ VIEWS = {
                         "nest, probe end - MCU backing boss inside the pocket",
                         (-26.0, 0.0, 5.0, 17.0)),
     "gauge":           ([("fit_gauge", 0)], 22, 46,
-                        "fit gauge - print once, find the hole an R50 sleeve just "
-                        "enters, put that number in PIN_BORE_D"),
+                        "fit gauge - blind counterbores one head deep; find the one "
+                        "an R50 head seats flush in"),
     "probes":          ([("base_plate", 0), ("probes_hw", 0)], 18, 62,
                         "base plate close-up - all seven probe islands, "
                         "cut back where a bottom-side part would foul them",

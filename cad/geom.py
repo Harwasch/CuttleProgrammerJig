@@ -84,9 +84,18 @@ def nest_recess():
 
 
 def probe_clear():
-    """Holes through the nest for the base's probe islands."""
-    return unary_union([Point(t["x"], t["y"]).buffer(P.PROBE_CLEAR_D / 2, ARC_SEGS)
-                        for t in TEST_POINTS])
+    """Holes through the nest for the base's probe islands.
+
+    Morphologically closed, so no unprintable web survives between adjacent
+    windows. As bare circles the closest pair (4.272 mm apart, Ø4.0 windows)
+    left a 0.272 mm web running the full 3 mm height of the nest's bottom slab,
+    with three more between 1.0 and 1.2 mm. Any web narrower than
+    PROBE_WEB_MIN is absorbed into a single stadium instead.
+    """
+    r = unary_union([Point(t["x"], t["y"]).buffer(P.PROBE_CLEAR_D / 2, ARC_SEGS)
+                     for t in TEST_POINTS])
+    c = P.PROBE_WEB_MIN / 2
+    return r.buffer(c, ARC_SEGS).buffer(-c, ARC_SEGS)
 
 
 def board_recess():

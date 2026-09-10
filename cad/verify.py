@@ -28,6 +28,10 @@ def vol(x):
     return sum(s.volume for s in x)
 
 
+# cos(45 deg): a downward face shallower than this needs no support
+OVERHANG_NZ = 0.7071
+
+
 def face_span(f):
     """Diameter of the largest circle that fits inside a downward face.
 
@@ -64,7 +68,25 @@ def main():
     seat = P.NEST_T                       # board underside, clamp closed
     if FULL:
         print("importing the full PCBA STEP (slow, exact) ...")
-        board = Pos(-OX, -OY, seat) * import_step(STEP)
+        # A Location on a Compound is SILENTLY IGNORED by .intersect(): a
+        # compound moved 100 mm away still reports full overlap. So --full was
+        # intersecting the board at its raw gerber coordinates, ~140 mm from the
+        # jig, and reported four failures that were pure artefact -- identical
+        # volumes before and after a 3 mm lift, which no real boolean can do.
+        # Pushing the transform down into each child solid fixes it.
+        loc = Location((-OX, -OY, seat))
+        # Drop copper film. 45 solids exactly 0.04 mm thick -- bottom-side pads
+        # and via rings, each wholly inside the nest seat -- were being reported
+        # as a 0.2801 mm3 interference. Every board rests on its own copper;
+        # extract_parts.py excludes these on the same FILM_T rule, so without
+        # this the two paths test different populations and --full can never
+        # agree with the fast path.
+        solids = import_step(STEP).solids()
+        keep = [sol for sol in solids
+                if (sol.bounding_box().max.Z - sol.bounding_box().min.Z) > P.FILM_T]
+        print(f"  ({len(solids) - len(keep)} copper-film solids under "
+              f"{P.FILM_T} mm excluded; {len(keep)} components kept)")
+        board = Compound(children=[sol.moved(loc) for sol in keep])
     else:
         print("building the banded PCBA keep-out solid (fast, conservative) ...")
         board = G.pcba_solid(seat)
@@ -72,9 +94,17 @@ def main():
 
     # ------------------------------------------------------------ stack-up --
     print("\nstack-up")
-    check("platform top = NEST_T + COMPRESSION - PIN_PROTRUSION",
-          abs(P.Z_PIN_TOP - (P.NEST_T + P.COMPRESSION - P.PIN_PROTRUSION)) < 1e-9,
-          f"Z_PIN_TOP = {P.Z_PIN_TOP:.3f} mm")
+    # NOT `Z_PIN_TOP == the formula that defines it`. What matters is that a
+    # probe standing on the platform is squeezed by COMPRESSION when the board
+    # is on the stop, and that the platform is above the plate it stands on.
+    tip_free = P.Z_PIN_TOP + P.PIN_PROTRUSION
+    check("probe tip is squeezed by COMPRESSION at the stop",
+          abs((tip_free - P.NEST_T) - P.COMPRESSION) < 1e-6,
+          f"free tip {tip_free:.3f} mm vs board underside {P.NEST_T:.3f} mm "
+          f"-> {tip_free - P.NEST_T:.3f} mm of squeeze")
+    check("platform stands above the plate, below the board",
+          0 < P.Z_PIN_TOP < P.NEST_T,
+          f"platform top {P.Z_PIN_TOP:.3f} mm")
     check("working stroke inside the probe's travel",
           0.8 <= P.COMPRESSION <= 0.7 * P.PIN_STROKE_MAX,
           f"{P.COMPRESSION:.2f} mm of {P.PIN_STROKE_MAX:.2f} mm")
@@ -82,31 +112,84 @@ def main():
           f"{P.TRAVEL - P.COMPRESSION:.2f} mm of daylight for loading")
     l_rest = P.BASE_SPRING_DEPTH + P.NEST_SPRING_DEPTH + P.TRAVEL
     l_stop = P.BASE_SPRING_DEPTH + P.NEST_SPRING_DEPTH
-    check("spring preloaded at rest", P.SPRING_FREE > l_rest + 0.5,
-          f"free {P.SPRING_FREE:.1f} -> installed {l_rest:.1f} mm "
-          f"({P.SPRING_FREE - l_rest:.1f} mm preload)")
-    check("spring not stacked solid when clamped", l_stop > 0.62 * P.SPRING_FREE,
-          f"{l_stop:.1f} mm at the stop, solid is about {0.5 * P.SPRING_FREE:.1f} mm")
+
+    # from the wire and coil count, NOT from free length. The old form could
+    # not see solid height at all: a 20-coil spring stacking at 13.2 mm against
+    # a 10 mm stop passed, and the BOM's own instruction is to select on solid
+    # height rather than free length.
+    check("spring not stacked solid when clamped", l_stop > P.SPRING_SOLID + 1.0,
+          f"{l_stop:.1f} mm at the stop, solid height {P.SPRING_SOLID:.2f} mm "
+          f"({P.SPRING_ACTIVE_COILS}+2 coils x {P.SPRING_WIRE_D} mm)")
+    # TRAVEL is derived, so what needs checking is that the derived value is
+    # usable -- nothing in the geometry stops the nest rising, so the spring's
+    # free length IS the rest position.
+    check("derived travel leaves room to load the board",
+          P.TRAVEL >= P.COMPRESSION + 1.0,
+          f"TRAVEL = SPRING_FREE - pockets = {P.TRAVEL:.2f} mm, "
+          f"{P.TRAVEL - P.COMPRESSION:.2f} mm of daylight over the probes")
+    check("no up-stop exists, so travel must come from the spring alone",
+          abs(P.TRAVEL - (P.SPRING_FREE - l_stop)) < 1e-9,
+          f"{P.SPRING_FREE:.1f} - {l_stop:.1f} = {P.TRAVEL:.2f} mm")
     engage = P.POST_TOP_Z - (P.TRAVEL + P.NEST_T + P.PCB_T)
     check("posts still guide the cover at rest", engage >= 5.0, f"{engage:.1f} mm engaged")
 
     # --------------------------------------------------------- probe bores --
     print("\nprobe bores and platform")
+    # Sized from the RECEPTACLE, not from the bore. The old sweep was
+    # Circle(PIN_BORE_D/2 - 0.02): it shrank with the bore, so setting
+    # PIN_BORE_D to 0.95 -- printing Ø0.73, too small to admit any probe --
+    # still reported every bore "0.0% obstructed".
+    head_r = (P.RECEPT_HEAD_D + 0.02) / 2
+    body_r = (P.RECEPT_BODY_D + 0.02) / 2
+    cb_bot = P.Z_PIN_TOP - P.PIN_HEAD_BORE_L
     for tp in G.TEST_POINTS:
-        # the bore must be open from the platform top down past the precision section
-        depth = P.PIN_LEAD_L + P.PIN_BORE_L
-        probe = Pos(tp["x"], tp["y"], P.Z_PIN_TOP - depth) * extrude(
-            Circle(P.PIN_BORE_D / 2 - 0.02), amount=depth)
-        check(f"{tp['net']:8s} bore open through {depth:.1f} mm",
-              vol(base.intersect(probe)) < 0.02 * probe.volume,
-              f"{100 * vol(base.intersect(probe)) / probe.volume:.1f}% obstructed")
-        # the platform must be solid in a collar outside the head counterbore
-        ring = (Pos(tp["x"], tp["y"], P.Z_PIN_TOP - 0.4) * extrude(Circle(1.45), amount=0.35)
-                - Pos(tp["x"], tp["y"], P.Z_PIN_TOP - 0.5) * extrude(
-                    Circle(P.PIN_LEAD_D / 2 + 0.10), amount=0.6))
-        got = vol(base.intersect(ring))
-        check(f"{tp['net']:8s} platform collar is solid", got > 0.55 * ring.volume,
-              f"{100 * got / ring.volume:.0f}% solid at z={P.Z_PIN_TOP:.2f}")
+        x, y = tp["x"], tp["y"]
+        body = Pos(x, y, cb_bot - P.PIN_BORE_L) * extrude(Circle(body_r),
+                                                          amount=P.PIN_BORE_L)
+        check(f"{tp['net']:8s} body bore admits the Ø{P.RECEPT_BODY_D} sleeve",
+              vol(base.intersect(body)) < 0.02,
+              f"{vol(base.intersect(body)):.4f} mm3 in the way over "
+              f"{P.PIN_BORE_L:.1f} mm")
+        head = Pos(x, y, cb_bot) * extrude(Circle(head_r),
+                                           amount=P.PIN_HEAD_BORE_L)
+        check(f"{tp['net']:8s} counterbore admits the Ø{P.RECEPT_HEAD_D} head",
+              vol(base.intersect(head)) < 0.02,
+              f"{vol(base.intersect(head)):.4f} mm3 in the way")
+
+    # The depth stop: the head must NOT fit the body bore, or the sleeve slides
+    # straight through and its Z is set by how hard you pushed -- which made
+    # PIN_PROTRUSION, the number the whole stack-up derives from, an assembly
+    # variable. This is what the old geometry did.
+    body_printed = P.PIN_BODY_BORE_D - P.PRINT_HOLE_SHRINK
+    head_printed = P.PIN_BORE_D - P.PRINT_HOLE_SHRINK
+    check("head cannot enter the body bore -> the sleeve bottoms flush",
+          body_printed < P.RECEPT_HEAD_D - 0.02,
+          f"body bore prints Ø{body_printed:.3f} against a Ø{P.RECEPT_HEAD_D} head "
+          f"-> {(P.RECEPT_HEAD_D - body_printed) / 2:.3f} mm of shoulder")
+    check("counterbore is a press fit on the head",
+          -0.02 <= head_printed - P.RECEPT_HEAD_D <= 0.06,
+          f"prints Ø{head_printed:.3f} on a Ø{P.RECEPT_HEAD_D} head")
+    check("body bore guides the body without seizing",
+          0.01 <= (body_printed - P.RECEPT_BODY_D) / 2 <= 0.08,
+          f"{(body_printed - P.RECEPT_BODY_D) / 2:.3f} mm radial on the body")
+    check("counterbore is exactly one head deep",
+          abs(P.PIN_HEAD_BORE_L - P.RECEPT_HEAD_L) < 1e-9,
+          f"{P.PIN_HEAD_BORE_L:.2f} mm for a {P.RECEPT_HEAD_L:.2f} mm head")
+
+    # Collar wall, measured in 2D against the platform relief cuts. The old
+    # check was a >55%-solid ring, loose enough to pass a bore whose wall had
+    # been cut to 0.15 mm and one that had been breached outright.
+    live = [fp for fp, zf in G.bottom_part_sweep()
+            if zf + P.PART_CLEAR_Z < P.Z_PIN_TOP]
+    for tp in G.TEST_POINTS:
+        pt = Point(tp["x"], tp["y"])
+        free = min([fp.distance(pt) for fp in live] + [P.PROBE_ISLAND_R])
+        wall = free - P.PIN_BORE_D / 2
+        # 0.34 mm is one extrusion on a 0.4 mm nozzle; below that the slicer
+        # drops the wall and the counterbore opens out of the side.
+        check(f"{tp['net']:8s} collar wall at the counterbore", wall >= 0.34,
+              f"{wall:.3f} mm"
+              + ("" if free >= P.PROBE_ISLAND_R else "  (cut back by a bottom-side part)"))
 
     # ------------------------------------------- interference, clamp closed --
     print("\ninterference, clamp closed (nest on the hard stop)")
@@ -124,6 +207,15 @@ def main():
           f"{vol(base.intersect(nest_up)):.4f} mm3")
     check("PCBA vs base plate, lifted", vol(base.intersect(board_up)) < 0.02,
           f"{vol(base.intersect(board_up)):.4f} mm3")
+    # ...and everywhere in between. Sampling only the two ends would miss
+    # anything that fouls mid-stroke.
+    steps = [P.TRAVEL * i / 6 for i in range(1, 6)]
+    worst_nest = max(vol(base.intersect(Pos(0, 0, d) * nest)) for d in steps)
+    worst_board = max(vol(base.intersect(Pos(0, 0, d) * board)) for d in steps)
+    check("nothing fouls anywhere in the stroke",
+          worst_nest < 0.02 and worst_board < 0.02,
+          f"worst of 5 intermediate heights: nest {worst_nest:.4f}, "
+          f"PCBA {worst_board:.4f} mm3")
 
     # ----------------------------------------------------------- hold-down --
     print("\nhold-down cover")
@@ -139,6 +231,26 @@ def main():
     cov_up = Pos(0, 0, seat + P.TRAVEL + board_t) * cover
     check("cover vs base plate, clamp open", vol(cov_up.intersect(base)) < 0.02,
           f"{vol(cov_up.intersect(base)):.4f} mm3 overlap")
+    # A Sphere(COVER_DIMPLE_R) centred on the top face of a COVER_T plate
+    # reaches exactly the underside: the cover had 0.000 mm of material at the
+    # one point the whole clamp load is applied, and nothing checked it.
+    left = P.COVER_T - P.COVER_DIMPLE_DEPTH
+    check("cover keeps material under the spindle", left >= 1.5,
+          f"{P.COVER_DIMPLE_DEPTH:.2f} mm dish in a {P.COVER_T:.2f} mm plate "
+          f"-> {left:.2f} mm left")
+    dx, dy = P.COVER_DIMPLE_XY
+    core = Pos(dx, dy, P.COVER_PAD_H) * extrude(Circle(0.4), amount=left - 0.05)
+    got = vol(cover.intersect(core))
+    check("...and the solid agrees", got > 0.95 * core.volume,
+          f"{100 * got / core.volume:.0f}% solid on the dimple axis")
+    # margin, not just overlap: the -X edge sat 0.029 mm from a 2.05 mm header
+    # and passed, because overlap at nominal was zero
+    play = P.fit(P.POST_HOLE_D, P.POST_D)
+    for ddx in (-play, play):
+        shifted = Pos(ddx, 0, seat + board_t) * cover
+        check(f"cover still clears the PCBA shifted {ddx:+.2f} mm on its posts",
+              vol(shifted.intersect(board)) < 0.02,
+              f"{vol(shifted.intersect(board)):.4f} mm3")
     for x, y in P.COVER_PADS:
         clr = min([bx.distance(Point(x, y)) for bx in G.part_boxes("top")])
         edge = G.OUTLINE.exterior.distance(Point(x, y))
@@ -152,7 +264,6 @@ def main():
     nest_open = Pos(0, 0, P.TRAVEL) * nest
     for nm, a, b2 in [("clamp tower vs nest, clamp open", base, nest_open),
                       ("clamp tower vs cover, clamp open", base, cov_open),
-                      ("clamp tower vs PCBA", base, board),
                       ("base plate vs stand", base, stand)]:
         v = vol(a.intersect(b2))
         check(nm, v < 0.02, f"{v:.4f} mm3 overlap")
@@ -195,26 +306,44 @@ def main():
     check("sleeve pitch workable with a fine iron tip", pitch >= 3.0,
           f"tightest pair {pitch:.2f} mm apart")
     # nothing may block the space directly under a sleeve
-    # With the plate off the stand, the tails are free-standing stubs on a flat
-    # bench -- which is the whole reason the plate is a separate part again.
+    # The obstruction that matters is the STAND and the fitted ST-Link, not the
+    # plate: the plate provably ends 0.1 mm above the old probe column, so those
+    # seven checks could not fail for any geometry.
+    L0, W0, H0 = P.STLINK_CASE
+    cl0 = L0 + P.STLINK_HEADER_ROOM + P.STLINK_USB_ROOM
+    case_x0 = P.STLINK_X_CENTRE - cl0 / 2 + P.STLINK_HEADER_ROOM + L0 / 2
+    fitted = Pos(case_x0, P.STLINK_Y_CENTRE,
+                 P.STLINK_TOP_Z - (H0 + 2 * P.STLINK_CLEAR) / 2) * Box(L0, W0, H0)
+    tail_z = P.Z_PIN_TOP - P.RECEPT_LEN
     for tp in G.TEST_POINTS:
-        col = Pos(tp["x"], tp["y"], P.PLATE_Z_BOTTOM - 30.0) * extrude(
-            Circle(2.0), amount=30.0 - 0.1)
-        v = vol(base.intersect(col))
-        check(f"{tp['net']:8s} solder access is clear", v < 0.02,
-              f"{v:.4f} mm3 below the plate over 30 mm")
+        col = Pos(tp["x"], tp["y"], tail_z) * extrude(
+            Circle(2.0), amount=P.PLATE_Z_BOTTOM - tail_z)
+        v = vol(stand.intersect(col)) + vol(fitted.intersect(col))
+        check(f"{tp['net']:8s} tail is clear of the stand and the ST-Link",
+              v < 0.02, f"{v:.4f} mm3 around a {P.PLATE_Z_BOTTOM - tail_z:.2f} mm tail")
 
     # ------------------------------------------------- plate to stand joint --
     print("\nplate-to-stand joint")
-    region, _ = jig.stand_profile()
+    # Test the RAW union, before the closing. Testing the closed region was
+    # circular -- morphological closing is idempotent, so re-closing it adds ~0
+    # for any geometry, and moving all four bosses 5 mm clear of the walls still
+    # reported "1 piece, adds 0.51 mm2, PASS".
+    raw, _ = jig.stand_profile(closed=False)
+    closed, _ = jig.stand_profile()
     f = P.STAND_BOSS_FILLET
-    pieces = len(region.geoms) if region.geom_type == "MultiPolygon" else 1
-    check("stand cross-section is one connected piece", pieces == 1,
-          f"{pieces} piece(s) -- a boss clear of the wall shows up as an island")
-    added = region.buffer(f, G.ARC_SEGS).buffer(-f, G.ARC_SEGS).area - region.area
-    check("no unfillable notch between a boss and a wall", added < 5.0,
-          f"re-closing at {f:.1f} mm adds {added:.2f} mm2 "
-          f"(63.33 mm2 with the bosses left as bare cylinders)")
+    raw_pieces = len(raw.geoms) if raw.geom_type == "MultiPolygon" else 1
+    check("every boss actually touches a wall before any filleting",
+          raw_pieces == 1,
+          f"{raw_pieces} piece(s) in the raw union -- a boss standing clear of "
+          f"the wall is a separate island here")
+    fillable = closed.area - raw.area
+    check("the boss-to-wall notches are within the fillet's reach",
+          fillable < len(P.MOUNT_SCREW_XY) * 25.0,
+          f"closing at {f:.1f} mm adds {fillable:.2f} mm2 of fillet across "
+          f"{len(P.MOUNT_SCREW_XY)} bosses")
+    left = closed.buffer(f, G.ARC_SEGS).buffer(-f, G.ARC_SEGS).area - closed.area
+    check("nothing unfillable is left in the built profile", left < 5.0,
+          f"{left:.2f} mm2 remaining after the closing")
 
     for x, y in P.MOUNT_SCREW_XY:
         hole = Pos(x, y, P.PLATE_Z_BOTTOM - P.MOUNT_INSERT_DEPTH) * extrude(
@@ -243,11 +372,20 @@ def main():
     c = P.STLINK_CLEAR
     cl, cw, ch = L + P.STLINK_HEADER_ROOM + P.STLINK_USB_ROOM, Wd + 2 * c, H + 2 * c
     fz = P.STAND_Z_BOTTOM + P.STLINK_FLOOR_T
-    cavity = Pos(P.STLINK_X_CENTRE, P.STLINK_Y_CENTRE, P.STLINK_TOP_Z - ch / 2) * \
-        Box(cl, cw, ch)
-    check("cavity is clear of the stand", vol(stand.intersect(cavity)) < 0.02,
-          f"{vol(stand.intersect(cavity)):.4f} mm3 in a "
-          f"{cl:.0f} x {cw:.0f} x {ch:.0f} mm cavity")
+    # The CASE must be clear -- not the cavity. The cavity is deliberately
+    # longer than the case (cable room at both ends) and the locating ribs live
+    # in that extra length, so testing the cavity flagged the ribs themselves.
+    case_x = P.STLINK_X_CENTRE - cl / 2 + P.STLINK_HEADER_ROOM + L / 2
+    case = Pos(case_x, P.STLINK_Y_CENTRE, P.STLINK_TOP_Z - ch / 2) * Box(L, Wd, H)
+    check("the case itself is clear of the stand", vol(stand.intersect(case)) < 0.02,
+          f"{vol(stand.intersect(case)):.4f} mm3 against a "
+          f"{L:.0f} x {Wd:.0f} x {H:.0f} mm case at x={case_x:+.1f}")
+    # ribs must bracket the CASE. Sizing them from the cavity put them 127 mm
+    # apart around a 100 mm case: 27 mm of slop, locating nothing.
+    span_x = L + 2 * P.STLINK_CLEAR
+    check("locating ribs bracket the case, not the cavity", span_x - L <= 4.0,
+          f"rib faces {span_x:.0f} mm apart on a {L:.0f} mm case "
+          f"-> {span_x - L:.0f} mm of slop")
     check("cavity sits on the floor", P.STLINK_TOP_Z - ch >= fz - 0.01,
           f"case bottom z={P.STLINK_TOP_Z - ch:.1f}, floor top z={fz:.1f}")
     check("cavity is inside the stand walls",
@@ -267,7 +405,7 @@ def main():
     # buried in it -- Box centres on its Pos, which is easy to get wrong
     for sx in (-1, 1):
         for sy in (-1, 1):
-            rx = P.STLINK_X_CENTRE + sx * (cl / 2 + 1.5)
+            rx = case_x + sx * (span_x / 2 + 1.5)
             ry = P.STLINK_Y_CENTRE + sy * cw / 2
             probe = Pos(rx, ry, fz + P.STLINK_RIB_H - 0.3) * Box(2.0, 6.0, 0.4)
             got = vol(stand.intersect(probe))
@@ -305,25 +443,35 @@ def main():
     check("gauge brackets the modelled bore",
           min(P.GAUGE_BORES) < P.PIN_BORE_D < max(P.GAUGE_BORES),
           f"{P.PIN_BORE_D} mm sits inside {min(P.GAUGE_BORES)}-{max(P.GAUGE_BORES)} mm")
-    check("lead-in is wider than the bore", P.PIN_LEAD_D > P.PIN_BORE_D,
-          f"lead {P.PIN_LEAD_D} mm into bore {P.PIN_BORE_D} mm")
+    check("mouth chamfer does not eat the collar",
+          P.PIN_MOUTH_CHAMFER <= 0.20,
+          f"{P.PIN_MOUTH_CHAMFER:.2f} mm; on the crowded bores it is the widest "
+          f"feature and so sets the thinnest wall")
 
     # Full chain from the board's pad to the probe tip, stated link by link.
     # The locators are on the deck, so the board registers straight to the
     # part that holds the probes and the nest contributes nothing. Putting them
     # on the nest instead would add its pin print error and its play on the
     # register pins -- measured at +0.232 mm worst case, over the pad budget.
-    pin_clear = (2.2 - P.LOCATOR_D) / 2
+    # AS PRINTED. The pin is printed (so it grows); the board's Ø2.20 hole is
+    # routed, so nothing shrinks it. Using the modelled diameter credited the
+    # design with clearance the printed part does not have.
+    pin_printed = P.LOCATOR_D + P.PRINT_BOSS_GROW
+    pin_clear = (2.2 - pin_printed) / 2
+    # derived from the actual body-bore fit, not a hard-coded 0.04 -- the chain
+    # used to be insensitive to the parameter it most depends on
+    sleeve_play = ((P.PIN_BODY_BORE_D - P.PRINT_HOLE_SHRINK) - P.RECEPT_BODY_D) / 2
     arm = max(math.hypot(t["x"], t["y"]) for t in G.TEST_POINTS)
     span = math.dist(G.HOLES[P.LOCATOR_PRIMARY[0]], G.HOLES[P.LOCATOR_PRIMARY[1]])
     links = [
         ("PCB hole to pad, fab",              0.050),
-        ("board on pin, clearance",           pin_clear),
+        (f"board on a Ø{pin_printed:.2f} pin as printed", pin_clear),
         (f"yaw from it, at {arm:.0f} mm",     math.atan(2 * pin_clear / span) * arm),
         ("base plate pin position, print",    0.100),
         ("base plate bore position, print",   0.100),
-        ("sleeve in a bore 0.04 over",        0.020),
-        ("sleeve tilt over the bore",         (0.04 / P.PIN_BORE_L) * P.PIN_PROTRUSION),
+        ("sleeve in the body bore",           sleeve_play),
+        ("sleeve tilt over the body bore",
+         (2 * sleeve_play / P.PIN_BORE_L) * P.PIN_PROTRUSION),
     ]
     worst = sum(v for _, v in links)
     rss = math.sqrt(sum(v * v for _, v in links))
@@ -352,13 +500,45 @@ def main():
               f"deck spans x {P.PEDESTAL_X[0]:.0f}..{P.PEDESTAL_X[1]:.0f}, "
               f"y {P.PEDESTAL_Y[0]:.0f}..{P.PEDESTAL_Y[1]:.0f}")
     solid_under = P.TOWER_TOP_Z - P.INSERT_M3_HOLE_DEPTH - P.TOWER_SOLID_Z
+    # Both mounting-hole rows must sit on the deck with real wall around them.
+    # The old check compared the deck's Y extent against CLAMP_HOLE_DY + 12, a
+    # number invented from the hole pattern, and CLAMP_BASE_L was referenced
+    # nowhere -- a 200 mm clamp on a 24 mm deck passed.
+    for x, y in ins:
+        wall = min(abs(y - P.PEDESTAL_Y[0]), abs(y - P.PEDESTAL_Y[1])) - \
+            P.INSERT_M3_HOLE_D / 2
+        check(f"clamp insert ({x:+6.2f},{y:+6.2f}) has wall to the tower face",
+              wall >= 2.0, f"{wall:.2f} mm")
+    dim_x0, dim_y0 = P.COVER_DIMPLE_XY
+    base_near = dim_y0 - P.CLAMP_SPINDLE_TO_END
+    base_far = base_near - P.CLAMP_BASE_L
+    over = P.STAND_Y[0] - base_far
+    check("clamp overhang past the back of the stand is declared, not accidental",
+          over <= 45.0,
+          f"clamp base spans y {base_far:.1f}..{base_near:.1f}, stand ends at "
+          f"y={P.STAND_Y[0]:.0f} -> {over:.1f} mm unsupported tail")
+    check("both mounting rows land on the deck",
+          all(P.PEDESTAL_Y[0] < y < P.PEDESTAL_Y[1] for _, y in ins),
+          f"rows at y={sorted(set(round(y,1) for _, y in ins))} inside "
+          f"{P.PEDESTAL_Y[0]:.0f}..{P.PEDESTAL_Y[1]:.0f}")
+    # the clamp screw must reach the insert without bottoming out
+    stick = P.CLAMP_SCREW_L - P.CLAMP_BASE_T
+    check("clamp screw engages the insert without bottoming out",
+          P.INSERT_M3_H <= stick < P.INSERT_M3_HOLE_DEPTH,
+          f"M3 x {P.CLAMP_SCREW_L:.0f} through a {P.CLAMP_BASE_T:.0f} mm base "
+          f"-> {stick:.0f} mm into a {P.INSERT_M3_HOLE_DEPTH:.0f} mm hole")
     check("material left under a blind insert hole", solid_under >= 3.0,
           f"{solid_under:.1f} mm of solid below the hole")
     check("hole is deeper than the insert",
           P.INSERT_M3_HOLE_DEPTH > P.INSERT_M3_H,
           f"{P.INSERT_M3_HOLE_DEPTH} mm hole for a {P.INSERT_M3_H} mm insert")
-    check("hole diameter suits the insert knurl", 3.85 <= P.INSERT_M3_HOLE_D <= 4.15,
-          f"O{P.INSERT_M3_HOLE_D} mm, between the 3.9 tip and 4.5 knurl")
+    # AS PRINTED, not as modelled. A modelled Ø4.00 printed Ø3.78, under the
+    # insert's own Ø3.90 tip, so it could not start square.
+    ins_printed = P.INSERT_M3_HOLE_D - P.PRINT_HOLE_SHRINK
+    check("insert hole PRINTS between the tip and the knurl",
+          P.INSERT_M3_TIP_D < ins_printed < P.INSERT_M3_KNURL_D,
+          f"modelled Ø{P.INSERT_M3_HOLE_D:.2f} -> prints Ø{ins_printed:.2f}, "
+          f"between Ø{P.INSERT_M3_TIP_D} and Ø{P.INSERT_M3_KNURL_D}")
     # the spindle must land on the cover's dimple, not just somewhere on it.
     # Tolerance is 0.5 mm on BOTH axes: the old check allowed COVER_DIMPLE_R of
     # X error, which passed a 3.6 mm miss when the dimple moved.
@@ -404,9 +584,21 @@ def main():
                             ("nest", nest, False), ("cover", cover, True)]:
         oriented = Rot(180, 0, 0) * shape if flip else shape
         bed_z = oriented.bounding_box().min.Z
-        flats = [f for f in oriented.faces().filter_by(GeomType.PLANE)
-                 if abs(f.normal_at(f.center()).Z + 1) < 1e-3
-                 and f.center().Z > bed_z + 0.05]
+        # ALL faces, not just exactly-horizontal planes. The old filter was
+        # `GeomType.PLANE and |n_z + 1| < 1e-3`, so a spherical or conical
+        # ceiling was invisible -- the cover's dimple could be opened out to a
+        # Ø16 hole punched clean through the part and this still reported
+        # "widest unsupported span 0.0 mm".
+        flats = []
+        for f in oriented.faces():
+            if f.center().Z <= bed_z + 0.05:
+                continue
+            try:
+                nz = f.normal_at().Z
+            except Exception:
+                continue
+            if nz <= -OVERHANG_NZ:          # 45 deg or shallower, facing down
+                flats.append(f)
         # 25 mm is what an enclosed, well-cooled printer bridges cleanly. The
         # deck ceiling is the only face anywhere near it, and it is a plain
         # strip with nothing above that depends on its finish.
@@ -422,20 +614,38 @@ def main():
     # Minimum wall, taken from the nest's actual cross-section at each level
     # rather than from the seat features alone.
     from shapely.geometry import box as _box
-    plate = _box(P.NEST_X[0], P.NEST_Y[0], P.NEST_X[1], P.NEST_Y[1])
+    # rounded to match NEST_FILLET: a square-cornered test plate produces its
+    # own sliver at each corner and reports it as a thin wall in the part
+    _r = P.NEST_FILLET
+    plate = _box(P.NEST_X[0] + _r, P.NEST_Y[0] + _r,
+                 P.NEST_X[1] - _r, P.NEST_Y[1] - _r).buffer(_r, G.ARC_SEGS)
     levels = [("seat", plate.difference(G.nest_recess())),
               ("lip", plate.difference(G.board_recess())),
               ("pocket floor", plate)]
     for nm2, region in levels:
         region = region.difference(G.probe_clear())
-        thin = None
-        for w in (3.0, 2.5, 2.0, 1.5, 1.2):
-            if region.buffer(-w / 2).is_empty:
-                thin = w
+        # An OPENING (erode then dilate) removes everything thinner than 2r and
+        # leaves the rest, so the residue is the area of the thin features. The
+        # old form asked `is_empty` in DESCENDING order, which made the result
+        # the constant 3.0 for every input -- a 0.4 mm sliver, a 0.01 mm speck
+        # and a 50 mm square all reported "survives a 3.0 mm erosion" and
+        # passed. It also used the union, so one fat feature masked every thin
+        # one.
+        # Judge on the LARGEST CONNECTED sliver, not total residue: a real thin
+        # wall is one connected feature, while polygon faceting scatters many
+        # sub-0.1 mm2 specks that would otherwise sum past any total-area limit.
+        widest, lost = 3.0, 0.0
+        for w in (1.2, 1.5, 2.0, 2.5, 3.0):
+            opened = region.buffer(-w / 2, G.ARC_SEGS).buffer(w / 2, G.ARC_SEGS)
+            resid = region.difference(opened)
+            parts = list(resid.geoms) if resid.geom_type.startswith("Multi") else [resid]
+            biggest = max([q.area for q in parts], default=0.0)
+            if biggest > 0.40:
+                widest, lost = w, biggest
                 break
-        widest = 3.0 if thin is None else thin
         check(f"nest {nm2:12s} cross-section has no thin walls", widest >= 2.0,
-              f"survives a {widest:.1f} mm erosion")
+              f"no connected feature under {widest:.1f} mm"
+              + (f" (worst sliver {lost:.2f} mm2)" if lost else ""))
     check("two locating pins fully constrain the board",
           len(P.LOCATOR_PRIMARY) == 2,
           f"{len(P.LOCATOR_PRIMARY)} pins, {P.LOCATOR_SECONDARY or 'no'} secondary")
@@ -470,8 +680,8 @@ def main():
           f"{engage:.2f} mm of pin above the board top at rest")
 
     # ---- nest registration: two pins, not the four over-constrained posts ----
-    post_play = (P.POST_HOLE_D - 0.22 - (P.POST_D + 0.08)) / 2
-    reg_play = (P.REG_HOLE_D - 0.22 - (P.REG_PIN_D + 0.08)) / 2
+    post_play = P.fit(P.POST_HOLE_D, P.POST_D)
+    reg_play = P.fit(P.REG_HOLE_D, P.REG_PIN_D)
     check("guide posts are free as printed, not a press fit", post_play >= 0.15,
           f"{2*post_play:.2f} mm diametral as printed "
           f"({P.POST_HOLE_D - P.POST_D:.2f} modelled)")
@@ -492,9 +702,26 @@ def main():
               vol(nest.intersect(hole)) < 0.02,
               f"Ø{P.REG_PIN_D + 0.10:.2f} swept through: "
               f"{vol(nest.intersect(hole)):.4f} mm3 in the way")
-    check("registration pins clear the board outline",
-          all(not G.OUTLINE.buffer(0.5).contains(Point(x, y)) for x, y in P.REG_XY),
-          "both outboard of the board in Y")
+    # the HOLE, not a point. A point test against a 0.5 mm buffer was blind to
+    # a Ø4.45 hole eating into the board recess lip.
+    keep = G.OUTLINE.buffer(P.NEST_LIP_CLEAR)
+    for i, (x, y) in enumerate(P.REG_XY):
+        hole = Point(x, y).buffer(P.REG_HOLE_D / 2 + P.REG_SLOT_EXTRA / 2, G.ARC_SEGS)
+        bite = hole.intersection(keep).area
+        check(f"register hole {i+1} clears the board recess", bite < 0.01,
+              f"{bite:.3f} mm2 of the Ø{P.REG_HOLE_D:.2f} hole inside the recess")
+
+    # the wall over the 3.3 V slot is also the lid's seating face
+    lintel = P.PLATE_Z_BOTTOM - P.WIRE_EXIT_Z[1]
+    check("wire slot leaves a real lintel under the lid seat", lintel >= 2.0,
+          f"{lintel:.2f} mm of wall over a {P.WIRE_SLOT_W:.0f} mm opening")
+
+    # the cover must not go on backwards
+    rev = Pos(2 * P.COVER_DIMPLE_XY[0], 0, seat + board_t) * (Rot(0, 0, 180) * cover)
+    check("cover cannot be fitted backwards",
+          vol(rev.intersect(base)) + vol(rev.intersect(board)) > 20.0,
+          f"{vol(rev.intersect(base)) + vol(rev.intersect(board)):.1f} mm3 of "
+          f"interference blocks it")
     mx, my, ms, mh = P.MCU_BOSS
     check("MCU boss stops short of the package", P.MCU_BOSS_CLEAR > 0,
           f"{P.MCU_BOSS_CLEAR} mm below a {mh} mm package -- backs the board "

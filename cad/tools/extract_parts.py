@@ -11,6 +11,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STEP = os.path.join(HERE, "..", "ref", "CANServo_Driver_v0.4.step")
 OUT = os.path.join(HERE, "..", "board_parts.json")
 OX, OY = 169.4216, -107.5716
+# Kept in step with params.FILM_T, which verify.py --full uses for the same
+# purpose. This tool runs standalone against the STEP, so it carries its own copy.
 FILM_T = 0.12          # ignore solids thinner than this (copper, pads, vias)
 FLAT_TOL = 0.02
 
