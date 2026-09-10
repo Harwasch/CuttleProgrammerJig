@@ -347,7 +347,7 @@ def build_fit_gauge():
     # exactly one head deep, with the same mouth chamfer. It used to be an
     # 11 mm through hole for a 9 mm application -- a deeper hole tapers more and
     # reads tighter, biasing the one measurement the whole design hangs on.
-    pitch, t = 7.5, P.PIN_HEAD_BORE_L + 2.5
+    pitch, t = 9.0, P.PIN_HEAD_BORE_L + 2.5   # pitch fits a 3-digit label
     w, d = n * pitch + 5.0, 14.0
     part = extrude(rrect((-w / 2, w / 2), (-d / 2, d / 2), 2.0), amount=t)
     for i, dia in enumerate(P.GAUGE_BORES):
@@ -359,7 +359,7 @@ def build_fit_gauge():
             Circle(dia / 2), amount=P.PIN_HEAD_BORE_L + 0.01)
         # label in hundredths of a mm, matching GAUGE_BORES
         part -= Pos(x, -4.0, t - 0.6) * extrude(
-            Text(f"{round(dia * 100)}", font_size=4.2,
+            Text(f"{round(dia * 100)}", font_size=4.0,
                  align=(Align.CENTER, Align.CENTER)), amount=0.7)
     return part
 
