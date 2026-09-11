@@ -42,3 +42,6 @@ cad/out/pcba.stl
 
 # Render aid only: probe hardware, not a printed part.
 cad/out/probes_hw.st*
+
+# render aid, copied from cad/out; not a printed part
+magfixture/out/pcba.stl

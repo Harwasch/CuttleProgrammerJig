@@ -116,6 +116,13 @@ raw gerber coordinates and reporting four failures that were pure artefact —
 with identical volumes before and after a 3 mm lift, which no real boolean can
 produce. If you are reading an older revision, do not trust its output.
 
+## Magnet test fixture
+
+[`magfixture/`](magfixture) is a separate fixture for the same board: it holds
+it flat and presents a spinning magnet to the AS5600L rotary encoder and a
+magnet adjustable from 1 to 13 mm to the linear hall sensor. It reuses this
+package's board geometry and print model rather than keeping its own copy.
+
 ## Board source files
 
 `cad/ref/` holds the inputs the extractors read — the V0.4 gerbers and the
