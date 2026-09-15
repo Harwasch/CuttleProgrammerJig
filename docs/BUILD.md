@@ -104,13 +104,14 @@ material and speed, so you calibrate once:
 1. Print `fit_gauge.stl` (80 × 14 × 5 mm, about 10 minutes) in the **same
    material and profile** you will use for the base plate. It has ten **blind
    counterbores 2.5 mm deep** labelled 90 to 135, in hundredths of a
-   millimetre.
+   millimetre. The P100 gauge steps 195 to 240 with 7.5 mm counterbores.
 
-   The depth matters: 2.5 mm is one receptacle head, so the coupon reproduces
+   The depth matters: the counterbore is one receptacle head deep, so the coupon reproduces
    exactly the feature it is calibrating. It used to be an 11 mm through hole
    for what is a 2.5 mm counterbore — a deeper hole tapers more and reads
    tighter, biasing the one measurement the whole design hangs on.
-2. Press an R50 sleeve into each. You want the smallest bore whose **head seats
+2. Press an R50 sleeve into each (P100: an R100, on a gauge stepping 1.95 to
+   2.40). You want the smallest bore whose **head seats
    flush** with a firm thumb push and does not rattle. The answer must have a
    bore too tight below it **and** one visibly loose above it — if the sleeve
    only enters the largest, the range has not bracketed your printer and you
@@ -145,15 +146,86 @@ stack-up derives from, and until this was stepped the lead-in printed at Ø1.18
 and the bore at Ø0.98 — both at or over the Ø0.98 head — so the sleeve slid
 straight through and its height was set by feel.
 
-The body bore then guides the 15 mm body over 8 mm at 0.020 mm radial, which is
-what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
-0.194 mm RSS against a 0.500 mm budget; `verify.py` prints every link.
+The sleeve is then held at two places — the counterbore on its head and the
+body bore on its body, 5.25 mm apart at 0.020 mm radial — and it is the
+distance between those two that limits tilt, not either one alone. The whole
+chain totals 0.442 mm worst case and 0.193 mm RSS against a 0.500 mm budget;
+`verify.py` prints every link.
+
+## The P100 variant
+
+The default build is a **P50-B1 probe in an R50-2S receptacle**. Setting
+`JIG_PINS=P100` builds for a **P100-B1 in an R100-4S** instead — a much larger
+pin, and not a drop-in.
+
+```bash
+cd cad
+JIG_PINS=P100 python3 jig.py       # -> cad/out/p100/
+JIG_PINS=P100 python3 verify.py
+python3 tools/compare_families.py  # which parts actually change
+```
+
+**It is not a base plate swap.** Two things force the rest:
+
+The P100 probe stands **8.35 mm** out of its receptacle where the P50 stands
+3.35 — 2.00 mm of tip cone plus 6.35 mm of Ø1.0 plunger rod, the whole of its
+Ø1.36 barrel disappearing into the receptacle's 25.00 mm tube. Since the seat
+height is `NEST_T + COMPRESSION − PIN_PROTRUSION` and nothing else in that
+expression may move, the probe seat goes from **3.85 mm above** the hard-stop
+plateau to **0.75 mm below** it. The plate stops growing a platform and gets a
+relief instead — which is the easy half, and it also means no bottom-side
+component can reach the plateau, so all the platform relief cutting disappears.
+
+The hard half is that the R100 receptacle is **39 mm long** against the R50's
+17.5. Its tail lands at z = −39.75, which is 22 mm past where the ST-Link's
+roof used to be. Nothing in plan can move — the probes are where the board's
+test points are — so the ST-Link moves out from under them into −Y and the box
+grows by just enough to take it. That leaves a clear 39 mm-wide channel along
++Y with the full depth of the stand under it, which is where the tails and the
+loom live.
+
+| | P50 | P100 |
+|---|---|---|
+| probe stands proud of the receptacle | 3.35 mm | 8.35 mm |
+| probe seat | 3.85 mm **above** the stop | 0.75 mm **below** it |
+| working stroke | 1.20 of 2.65 mm | 1.60 of 3.50 mm |
+| clamp load, closed | 10.0 N | 15.0 N |
+| counterbore | Ø0.98 × 2.5 mm | Ø1.90 × 7.5 mm |
+| body bore, as printed | Ø0.90 × 8.0 mm | Ø1.71 × 5.0 mm |
+| fit gauge range | 0.90–1.35 | 1.95–2.40 |
+| base plate | 8 mm thick | 14 mm thick |
+| outline | 145 × 91 mm | 145 × 101 mm |
+| lid screws | M3 × 12 | M3 × 16 |
+| tail proud of the plate | 5.65 mm | 25.75 mm |
+
+The body bore lands at **Ø1.71 as printed**, against the vendor's own stated
+drilling size of 1.70 mm for this receptacle. That is not a number anyone
+tuned: it falls out of the same print model calibrated on the P50 sleeve, which
+is a useful independent sign that the model transfers to this size.
+
+**`nest` and `cover` are unchanged** — identical volume, bounding box and
+topology in both families, which `tools/compare_families.py` checks rather than
+asserts. Print a new `base_plate`, `stand` and `fit_gauge`; keep the rest.
+
+The P100's thinnest collar is **0.826 mm**, between VDD_3V3 and SWDIO 4.27 mm
+apart — more than the P50's 0.35 mm, because with the seat recessed there is no
+island to be cut back and the wall is shared with the neighbouring bore instead.
+
+**Calibrate first, as always**, on the P100 gauge: it steps 1.95 to 2.40 and you
+are looking for the bore an R100 head just enters.
+
+Three numbers in `params.py` are read off the vendor drawing rather than
+measured, and all three are flagged there: `PIN_PROTRUSION` (8.35),
+`PIN_STROKE_MAX` (3.50) and `RECEPT_HEAD_L` (7.5, the dimension that separates
+the −1W/−4W/−5W variants). `PIN_PROTRUSION` is the one that matters — the whole
+stack-up derives from it, so measure a probe in a receptacle with calipers
+before you commit to a plate.
 
 ## Assembly
 
 1. Calibrate `PIN_BORE_D` with the gauge, measure your ST-LINK/V2 into
    `STLINK_CASE`, and only then print the parts.
-2. Press an **R50-2S sleeve** into each bore from the top, tail first, until
+2. Press an **R50-2S sleeve** (P100: **R100-4S**) into each bore from the top, tail first, until
    its head bottoms in the counterbore — its top will then be flush with the
    platform. The tail projects 5.7 mm below the deck into the wire bay. The
    counterbore locates and grips it; it does not necessarily retain it against
@@ -178,7 +250,7 @@ what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
    USB cable out through the hole in the +X wall, and plug the probe loom onto
    its 20-pin header (table below). Bring the 3.3 V feed in through the slot on
    the far side from the clamp and zip-tie it.
-6. Lower the plate onto the stand and fit the four **M3 × 12** into the corner
+6. Lower the plate onto the stand and fit the four **M3 × 12** (P100: **M3 × 16**, for the thicker plate) into the corner
    inserts. Heads sit in Ø6.4 × 3 mm counterbores, flush below the plateau.
 
    These are inserts rather than screws cut straight into the plastic because
@@ -186,7 +258,7 @@ what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
    M3 self-tapped into PETG does not survive many cycles. The clamp load is
    internal anyway — the spindle presses the cover down, the springs push the
    plate down by the same amount — so the screws only stop the lid shifting.
-7. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
+7. Push a **P50-B1 probe** (P100: **P100-B1**) into each sleeve until it seats. Tips should now
    stand 3.35 mm proud of the platform.
 
    This has to happen **before** the nest goes on: once it does, each sleeve
@@ -201,7 +273,7 @@ what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
    MH4 at Ø2.10 locate it; there are no secondary pins.
 
    The pins are on the base plate rather than the nest so the board registers directly
-   to the part that holds the probes: worst case 0.444 mm rather than 0.676 mm,
+   to the part that holds the probes: worst case 0.442 mm rather than 0.674 mm,
    against 0.5 mm of usable pad. They are stepped — Ø3.00 up to the seat, then
    Ø2.10 — so only 6 mm stands proud, at 2.9:1 rather than 5.7:1.
 
@@ -288,7 +360,7 @@ computed from the second one.
 calibrates the counterbore but says nothing about whether the bore beneath it
 comes out tapered. If a sleeve seats cleanly in the gauge but will not bottom
 in the plate, that is the cause — shorten `PIN_BORE_L` to 6 mm and reprint the
-plate; the cost is 0.006 mm of extra probe tilt against a 0.500 mm budget.
+plate; the cost is 0.003 mm of extra probe tilt against a 0.500 mm budget.
 
 **Two probe collars are thin by necessity.** SWDIO and SWCLK sit 0.95 and
 1.05 mm from the inflated footprint of the tallest bottom-side component, so

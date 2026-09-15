@@ -21,6 +21,8 @@ import params as P
 import geom as G
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+if P.PIN_FAMILY != "P50":
+    OUT = os.path.join(OUT, P.PIN_FAMILY.lower())
 
 
 def rrect(xr, yr, r, z=0.0):
@@ -36,19 +38,28 @@ def build_base_plate():
     z0 = P.PLATE_Z_BOTTOM
     part = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0), amount=-z0)
 
-    # raised probe platform, then cut it back under every bottom-side part
-    platform = extrude(G.sk(G.probe_islands()), amount=P.Z_PIN_TOP)
-    for fp, zfloor in G.bottom_part_sweep():
-        cut = fp
-        if zfloor + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
-            # This part's underside clears the platform top, so it passes over
-            # the islands and they can keep their full collar. Cutting them
-            # anyway left 0.15 mm of wall on two bores and breached a third.
-            cut = fp.difference(G.probe_islands())
-        if cut.is_empty:
-            continue
-        platform -= extrude(G.sk(cut, Plane.XY.offset(zfloor)), amount=P.Z_PIN_TOP + 1)
-    part += platform
+    # The probe seat. Where it lands relative to the hard-stop plateau is set by
+    # the pin family, not by choice: seat = NEST_T + COMPRESSION - PROTRUSION.
+    # A P50 stands 3.35 mm out of its receptacle and wants the seat 3.85 mm UP,
+    # so the plate grows a platform. A P100 stands 8.35 mm out and wants it
+    # 0.75 mm DOWN, so the plate gets a relief instead and the plateau stays
+    # whole -- which also means no bottom-side part can reach it, and none of
+    # the relief cutting below is needed.
+    if P.Z_PIN_TOP > 0:
+        platform = extrude(G.sk(G.probe_islands()), amount=P.Z_PIN_TOP)
+        for fp, zfloor in G.bottom_part_sweep():
+            cut = fp
+            if zfloor + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
+                # This part's underside clears the platform top, so it passes
+                # over the islands and they can keep their full collar. Cutting
+                # them anyway left 0.15 mm of wall on two bores and breached a
+                # third.
+                cut = fp.difference(G.probe_islands())
+            if cut.is_empty:
+                continue
+            platform -= extrude(G.sk(cut, Plane.XY.offset(zfloor)),
+                                amount=P.Z_PIN_TOP + 1)
+        part += platform
 
     # guide posts, rising from the floor of their own spring pockets
     for x, y in P.POST_XY:
@@ -68,6 +79,12 @@ def build_base_plate():
         # sized for the BODY. The head cannot enter the body bore, so it bottoms
         # flush with the platform instead of stopping wherever you stopped
         # pushing.
+        if top < 0:
+            # Seat below the plateau: sink a relief from the plateau down to
+            # it, wide enough to pass the head so the receptacle can still be
+            # pulled out upwards.
+            part -= p * Pos(0, 0, top) * extrude(
+                Circle(P.bore(P.PIN_RELIEF_D) / 2), amount=-top)
         part -= p * Pos(0, 0, top) * extrude(
             Circle(P.PIN_BORE_D / 2 + P.PIN_MOUTH_CHAMFER),
             amount=-P.PIN_MOUTH_CHAMFER, taper=45)
@@ -320,12 +337,17 @@ def build_stand():
             cx = case_x + sx * (L + 2 * P.STLINK_CLEAR) / 2
             cy = P.STLINK_Y_CENTRE + sy * cw / 2
             rz = fz + P.STLINK_RIB_H / 2          # Box centres on its Pos
-            part += Pos(cx + sx * 1.5, cy, rz) * Box(3.0, 14.0, P.STLINK_RIB_H)
-            part += Pos(cx, cy + sy * 1.5, rz) * Box(14.0, 3.0, P.STLINK_RIB_H)
+            # Each leg runs INWARD from the corner. Centred on it, the 14 mm
+            # Y leg stuck 7 mm past the cavity and straight out through the
+            # -Y wall as soon as the P100 moved the case up against it.
+            part += Pos(cx + sx * 1.5, cy - sy * 7.0, rz) * \
+                Box(3.0, 14.0, P.STLINK_RIB_H)
+            part += Pos(cx - sx * 7.0, cy + sy * 1.5, rz) * \
+                Box(14.0, 3.0, P.STLINK_RIB_H)
 
     # USB cable, out through the +X wall at the case's own height
     ch = H + 2 * P.STLINK_CLEAR
-    part -= Pos(P.STAND_X[1], 0, P.STLINK_TOP_Z - ch / 2) * \
+    part -= Pos(P.STAND_X[1], P.STLINK_Y_CENTRE, P.STLINK_TOP_Z - ch / 2) * \
         Box(4 * W, P.STLINK_USB_W, P.STLINK_USB_H)
 
     # feed for the external 3.3 V supply, on the far side from the clamp
@@ -366,17 +388,18 @@ def build_fit_gauge():
 
 # ------------------------------------------- hardware, for renders only -----
 def build_probes():
-    """The seven R50 sleeves and the P50 tips standing in them. Not a printed
+    """The seven receptacles and the probe tips standing in them. Not a printed
     part -- it exists so the renders show where the solder joints actually are."""
     out = None
     for tp in G.TEST_POINTS:
         p = Pos(tp["x"], tp["y"])
         sleeve = p * Pos(0, 0, P.Z_PIN_TOP - P.RECEPT_LEN) * extrude(
             Circle(P.RECEPT_BODY_D / 2), amount=P.RECEPT_LEN)
+        r = P.RECEPT_BODY_D / 3.4
         shaft = p * Pos(0, 0, P.Z_PIN_TOP) * extrude(
-            Circle(0.25), amount=P.PIN_PROTRUSION - 0.55)
+            Circle(r), amount=P.PIN_PROTRUSION - 0.55)
         tip = p * Pos(0, 0, P.Z_PIN_TOP + P.PIN_PROTRUSION - 0.55) * extrude(
-            Circle(0.25), amount=0.55, taper=45)
+            Circle(r), amount=0.55, taper=45)
         out = sleeve + shaft + tip if out is None else out + sleeve + shaft + tip
     return out
 

@@ -116,6 +116,15 @@ raw gerber coordinates and reporting four failures that were pure artefact —
 with identical volumes before and after a 3 mm lift, which no real boolean can
 produce. If you are reading an older revision, do not trust its output.
 
+## Larger pogo pins
+
+`JIG_PINS=P100 python3 jig.py` builds the same jig for a **P100-B1 probe in an
+R100-4S receptacle** instead of the default P50/R50 pair, into `cad/out/p100/`.
+It is a new `base_plate`, `stand` and `fit_gauge`; the `nest` and `cover` carry
+straight over. Both variants build and verify from the same code, and
+`cad/tools/compare_families.py` reports which parts actually differ. See
+[docs/BUILD.md](docs/BUILD.md) for why the bigger pin also moves the ST-Link.
+
 ## Magnet test fixture
 
 [`magfixture/`](magfixture) is a separate fixture for the same board: it holds

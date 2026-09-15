@@ -1,5 +1,9 @@
 """Cuttle CANServo_Driver pogo programming jig - all tunable dimensions.
 
+Two pin families, selected with the JIG_PINS environment variable: P50 (the
+default, P50-B1 in R50-2S) and P100 (P100-B1 in R100-4S). See the pogo pin
+block for what actually differs and why it reaches further than the plate.
+
 Coordinate system
 -----------------
 X, Y : the JIG frame, identical to board_geometry.json.
@@ -9,6 +13,8 @@ Z    : 0 = the base's hard-stop plateau, i.e. the face the nest lands on when
 
 The one number to verify with calipers before printing is PIN_PROTRUSION.
 """
+
+import os
 
 # ---------------------------------------------------------------- board -----
 PCB_T                = 1.627   # board thickness, from the gerber job file
@@ -21,28 +27,81 @@ PART_H_BOTTOM        = 2.585   # tallest bottom-side part, from the STEP
 PART_H_TOP_MAIN      = 1.285   # tallest top-side part on the main rigid section
 
 # ------------------------------------------------------------ pogo pins -----
-# P50-B1 probe in an R50-2S receptacle.
-PIN_PROTRUSION       = 3.35    # probe tip above the receptacle's top face  <-- VERIFY
-PIN_STROKE_MAX       = 2.65    # full travel of a P50 before it bottoms out
-COMPRESSION          = 1.20    # working stroke, 45% of full - the design target
-PIN_FORCE_G          = 75      # per probe at working stroke
+# TWO pin families, selected by the JIG_PINS environment variable:
+#
+#   JIG_PINS=P50   (default)  P50-B1  probe in an R50-2S  receptacle
+#   JIG_PINS=P100             P100-B1 probe in an R100-4S receptacle
+#
+# They are not interchangeable in one plate and they do not share a stand. The
+# P100 probe stands 8.35 mm out of its receptacle where the P50 stands 3.35,
+# which drops the probe seat from 3.85 mm ABOVE the hard-stop plateau to 0.75
+# BELOW it -- a recess instead of a raised platform. And the R100 receptacle is
+# 39 mm long where the R50 is 17.5, so 31.5 mm of it hangs below the seat and
+# the tail lands at z = -32.25 where the ST-Link's roof used to be at -16.
+#
+# Everything downstream of these numbers is derived, so the same jig.py and the
+# same verify.py build and check both.
+PIN_FAMILY = os.environ.get("JIG_PINS", "P50").upper()
+if PIN_FAMILY not in ("P50", "P100"):
+    raise SystemExit(f"JIG_PINS must be P50 or P100, not {PIN_FAMILY!r}")
 
-RECEPT_LEN           = 17.5    # R50-2S overall length
-RECEPT_BODY_D        = 0.86    # sleeve body diameter
-RECEPT_HEAD_D        = 0.98    # sleeve head diameter
-RECEPT_HEAD_L        = 2.5     # head length
+if PIN_FAMILY == "P50":
+    # The probe's exposed length: 2.00 mm tip cone + 1.35 mm of Ø0.5 plunger.
+    PIN_PROTRUSION   = 3.35    # probe tip above the receptacle's top face  <-- VERIFY
+    PIN_STROKE_MAX   = 2.65    # full travel before it bottoms out
+    COMPRESSION      = 1.20    # working stroke, 45% of full - the design target
+    PIN_FORCE_G      = 75      # per probe at working stroke
+
+    RECEPT_LEN       = 17.5    # R50-2S overall length
+    RECEPT_BODY_D    = 0.86    # sleeve body diameter
+    RECEPT_HEAD_D    = 0.98    # sleeve head diameter
+    RECEPT_HEAD_L    = 2.5     # head length
+    PIN_BORE_D       = 1.20    # MODELLED; see the calibration note below
+    PIN_BORE_L       = 8.0     # body guidance below the head
+    PIN_CLEAR_D      = 2.20    # loose clearance below the bore
+    GAUGE_BORES      = [0.90, 0.95, 1.00, 1.05, 1.10,
+                        1.15, 1.20, 1.25, 1.30, 1.35]
+else:
+    # P100-B1, from the vendor drawing: 33.35 mm overall = 2.00 tip cone
+    # (Ø0.99, 30 deg) + 6.35 of Ø1.0 plunger rod + 25.00 of Ø1.36 barrel. The
+    # R100 receptacle's Ø1.67 tube section is ALSO 25.00 mm long, so the barrel
+    # goes fully in and what stands proud is exactly the rod plus the tip.
+    PIN_PROTRUSION   = 33.35 - 25.00                          # 8.35  <-- VERIFY
+    PIN_STROKE_MAX   = 3.50    # P100 series full travel  <-- VERIFY
+    COMPRESSION      = 1.60    # 46% of full, matching the P50 variant's ratio
+    PIN_FORCE_G      = 180     # the listing's rated force, at 2/3 stroke
+
+    # R100-4S: Ø1.67 tube, Ø1.9 head, 39 mm overall. The 2.5 / 7.5 / 10.0
+    # dimension that separates the -1W / -4W / -5W variants is the HEAD length;
+    # -4S is the 7.5 mm head with a solder-cup tail.
+    RECEPT_LEN       = 39.0    # overall, per the listing        <-- MEASURE
+    RECEPT_BODY_D    = 1.67
+    RECEPT_HEAD_D    = 1.90
+    RECEPT_HEAD_L    = 7.5     # -4S head                        <-- MEASURE
+    # Modelled so the counterbore PRINTS at the head diameter, the same rule
+    # the P50 number was calibrated to. It lands the body bore at Ø1.71, which
+    # is the vendor's own stated drilling size of 1.70 mm -- an independent
+    # confirmation that the print model transfers to this size.
+    PIN_BORE_D       = 2.12    # = bore(1.90); recalibrate on the fit gauge
+    PIN_BORE_L       = 5.0     # with the 7.5 mm head above it, two bearing
+                               # zones 6.25 mm apart -- and tilt over a probe
+                               # that stands 8.35 mm proud is what the pad
+                               # budget actually spends its margin on
+    PIN_CLEAR_D      = 2.60    # must pass the Ø1.9 head
+    GAUGE_BORES      = [1.95, 2.00, 2.05, 2.10, 2.15,
+                        2.20, 2.25, 2.30, 2.35, 2.40]
 
 # Probe bores are printed to final size -- no drilling. FDM renders a small
 # vertical hole undersize, by an amount that depends on your printer, nozzle,
 # material and speed, so PIN_BORE_D is a MODELLED diameter to be calibrated
 # once against the fit gauge (cad/out/fit_gauge.stl). Print the gauge, find
 # the hole the sleeve just pushes into, set that number here, print the plate.
-# 1.20 is the MEASURED result on this build: the sleeve entered the gauge's
-# 120 bore and nothing smaller, so the profile is rendering a small vertical
-# hole about 0.22 mm under nominal -- more shrink than the 0.08-0.14 mm a PLA
-# profile usually gives, which is normal for PETG. Recalibrate if you change
-# printer, nozzle, material or speed.
-PIN_BORE_D           = 1.20    # what the gauge measured: the head just enters
+# 1.20 is the MEASURED result on this build for the P50 sleeve: it entered the
+# gauge's 120 bore and nothing smaller, so the profile is rendering a small
+# vertical hole about 0.22 mm under nominal -- more shrink than the 0.08-0.14 mm
+# a PLA profile usually gives, which is normal for PETG. Recalibrate if you
+# change printer, nozzle, material or speed. The P100 gauge steps 1.95-2.40.
+#
 # STEPPED, so the sleeve has somewhere to STOP. Previously the lead-in printed
 # at 1.18 and the bore at 0.98 -- both at or over the Ø0.98 head -- so the head
 # passed straight through and depth was set purely by how hard you pushed. That
@@ -51,20 +110,16 @@ PIN_BORE_D           = 1.20    # what the gauge measured: the head just enters
 #
 # Now: a counterbore exactly one head long, then a bore sized for the BODY. The
 # head cannot enter the body bore, so it bottoms with its top flush with the
-# platform, by construction.
-PIN_HEAD_BORE_L      = RECEPT_HEAD_L                    # 2.5 mm, one head
+# seat, by construction.
+PIN_HEAD_BORE_L      = RECEPT_HEAD_L
 PIN_BODY_BORE_D      = PIN_BORE_D - (RECEPT_HEAD_D - RECEPT_BODY_D) + 0.04
-PIN_BORE_L           = 8.0     # body guidance below the head; this is what
-                               # actually limits sleeve tilt now
 PIN_MOUTH_CHAMFER    = 0.15    # replaces the old oversized lead-in. Small: on
                                # the two crowded bores it is the widest feature
                                # and so sets the thinnest wall.
-PIN_CLEAR_D          = 2.20    # loose clearance below the bore
-# The gauge must bracket the answer on BOTH sides -- a sleeve that only enters
-# the largest bore tells you nothing about whether that bore is a press fit or
-# already loose. 1.20 landed on the old top slot, so the range moved up.
-GAUGE_BORES          = [0.90, 0.95, 1.00, 1.05, 1.10,
-                        1.15, 1.20, 1.25, 1.30, 1.35]
+# Only used when the seat is BELOW the plateau (the P100 family): a short
+# relief from the plateau down to the seat, wide enough to pass the head so the
+# receptacle can still be pulled out upwards.
+PIN_RELIEF_D         = RECEPT_HEAD_D + 0.5
 
 # ------------------------------------------------------- the print model ----
 # Calibrated from the fit gauge, and the SINGLE source for every fit in this
@@ -241,14 +296,21 @@ NEST_FILLET          =   3.0
 # closes inside one part and the stand below is a plain open box. That is what
 # lets the ST-Link have the entire interior, and what puts the probe tails back
 # on an open bench for soldering.
-PLATE_Z_BOTTOM       =  -8.0
+# Deep enough to hold the whole stepped bore: the seat, then a counterbore one
+# head long, then the body bore, then a little clearance. The P100's head alone
+# is 7.5 mm and its seat is 0.75 mm BELOW the plateau, so 8 mm of plate would
+# have been breached by the counterbore before the body bore ever started.
+PLATE_Z_BOTTOM       =  -8.0 if PIN_FAMILY == "P50" else -14.0
 PLATE_FILLET         =   6.0
 MOUNT_SCREW_D        =   3.4   # M3 clearance, plate -> stand
+# The screw has to cross the plate and still bury 4 mm of thread in the insert.
+# The P100 plate is 14 mm, not 8, so an M3 x 12 reaches 1 mm past it.
+MOUNT_SCREW_CBORE    =   3.0   # counterbore in the plate top
+MOUNT_SCREW_L        =  12.0 if PIN_FAMILY == "P50" else 16.0
 # Four screws, in the two Y strips the ST-Link cavity does not reach. The clamp
 # load is internal -- the spindle pushes the cover down, the springs push the
 # plate down by the same amount -- so these only stop the lid shifting.
-MOUNT_SCREW_XY       = [(-66.0, -51.5), (63.0, -51.5),
-                        (-66.0,  21.5), (63.0,  21.5)]
+MOUNT_SCREW_XY       = None    # derived once STAND_X/STAND_Y are known, below
 MOUNT_BOSS_R         =   4.5
 # The bosses sit in the corners, where a bare cylinder either meets the wall
 # tangentially (a zero-degree wedge no nozzle can fill) or misses it entirely.
@@ -267,7 +329,8 @@ MOUNT_INSERT_DEPTH   =   8.0   # 4 mm insert at the top, 4 mm of run-out below,
 # ------------------------------------------------------------------ stand ---
 # One monolithic part: the open frame under the base plate and the clamp tower
 # are the same walls, not a bolt-on bracket.
-STAND_Z_BOTTOM       = -50.0   # floor, then the ST-Link cavity, then the wire
+STAND_Z_BOTTOM       = -50.0 if PIN_FAMILY == "P50" else -52.0
+                               # floor, then the ST-Link cavity, then the wire
                                # space up to the plate underside at -8
 STAND_WALL           =   4.0
 # The GH-201's spindle sits at its mounting plane and only adjusts DOWNWARD, so
@@ -279,7 +342,8 @@ TOWER_TOP_Z          =  20.0   # clamp mounting deck
 TOWER_SOLID_Z        =   8.0   # tower is hollow below this, solid above. 8, not
                                # 10, so an 8 mm insert hole still leaves 4 mm of
                                # solid beneath it
-WIRE_EXIT_Z          = (-14.0, -10.5)   # feed for the external 3.3 V supply, on
+WIRE_EXIT_Z          = ((-14.0, -10.5) if PIN_FAMILY == "P50"
+                        else (-20.0, -16.5))  # feed for the external 3.3 V supply, on
                                         # the far side from the clamp. The SWD
                                         # loom no longer leaves the body -- it
                                         # goes straight down to the ST-Link.
@@ -319,7 +383,20 @@ COVER_DIMPLE_XY      = (-7.0, 0.0)
 # Grown from 137 x 83: a 127 mm cavity plus the screw bosses would not fit
 # inside the old interior. The plate shares these bounds -- it is the lid.
 STAND_X              = (-74.0, 71.0)
-STAND_Y              = (-60.0, 31.0)
+# The P100's receptacle tails hang to z = -32.25, which is 20 mm below the
+# plate and straight through where the ST-Link sat. Nothing in plan can be
+# moved -- the probes are where the board's test points are -- so the ST-Link
+# moves out from under them, into -Y, and the box grows by just enough to take
+# it. That leaves a clear 39 mm-wide channel along +Y for the tails and the
+# loom, with the full depth of the box under them.
+STAND_Y              = (-60.0, 31.0) if PIN_FAMILY == "P50" else (-70.0, 31.0)
+# Derived from the outline, so they follow when the P100 stand grows in -Y to
+# get the ST-Link out from under the probe tails.
+MOUNT_SCREW_XY       = [(STAND_X[0] + 8.0, STAND_Y[0] + 8.5),
+                        (STAND_X[1] - 8.0, STAND_Y[0] + 8.5),
+                        (STAND_X[0] + 8.0, STAND_Y[1] - 9.5),
+                        (STAND_X[1] - 8.0, STAND_Y[1] - 9.5)]
+
 PLATE_X              = STAND_X
 PLATE_Y              = STAND_Y
 # The clamp tower rides on the PLATE now, not the stand: on the stand its walls
@@ -344,11 +421,20 @@ STLINK_CASE          = (100.0, 50.0, 30.0)   # L x W x H  <-- MEASURE THIS
 STLINK_HEADER_ROOM   =  15.0   # -X end, for the 20-pin ribbon
 STLINK_USB_ROOM      =  12.0   # +X end, for the plug and its boot
 STLINK_CLEAR         =   1.0   # all round the case itself
-STLINK_TOP_Z         = -16.0   # cavity ceiling: 2.35 mm under the probe tails
-STLINK_Y_CENTRE      = -20.0   # keeps both Y strips free for the screw bosses
+STLINK_TOP_Z         = -16.0 if PIN_FAMILY == "P50" else -18.0
+                               # cavity ceiling, a few mm under the lid
+# P50: centred, keeping both Y strips free for the screw bosses. P100: pushed
+# into -Y until the cavity's +Y face clears the probe tails' clearance bores.
+STLINK_Y_CENTRE      = -20.0 if PIN_FAMILY == "P50" else -37.5
 STLINK_X_CENTRE      =  -1.5
 STLINK_FLOOR_T       =   2.0
 STLINK_RIB_H         =   2.5   # locating ribs on the floor, at the case corners
+# What the cable ends actually need, as opposed to the generous box the cavity
+# reserves for them: a 20-pin 1.27 mm IDC ribbon is about 26 mm across and the
+# USB plug with its boot about 16. The lid bosses have to clear THESE, not the
+# full-width room -- on the P100 stand a boss sits in the -Y corner of the
+# header room, 24 mm off the ribbon's centreline, and fouls nothing.
+STLINK_RIBBON_W      =  26.0
 STLINK_USB_W         =  16.0   # hole in the +X wall for the cable and its boot
 STLINK_USB_H         =  14.0
 
@@ -385,5 +471,6 @@ INSERT_M3_HOLE_DEPTH =   8.0
 # to the nearer of the two mounting-hole rows. 24.6 mm is read off the drawing
 # (19.6 mm spindle-to-plate plus about 5 mm plate-edge-to-hole), not measured.
 CLAMP_SPINDLE_TO_ROW =  24.6
+CLAMP_RATING_KG      =  27.0   # GH-201 rated holding force
 
 # ------------------------------------------------------------ printing -----

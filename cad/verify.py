@@ -102,9 +102,22 @@ def main():
           abs((tip_free - P.NEST_T) - P.COMPRESSION) < 1e-6,
           f"free tip {tip_free:.3f} mm vs board underside {P.NEST_T:.3f} mm "
           f"-> {tip_free - P.NEST_T:.3f} mm of squeeze")
-    check("platform stands above the plate, below the board",
-          0 < P.Z_PIN_TOP < P.NEST_T,
-          f"platform top {P.Z_PIN_TOP:.3f} mm")
+    # Where the seat lands is NOT a choice -- it is NEST_T + COMPRESSION minus
+    # however far the probe stands out of its receptacle. A P50 stands 3.35 mm
+    # out and puts it 3.85 above the hard stop, so the plate grows a platform.
+    # A P100 stands 8.35 out and puts it 0.75 BELOW, so the plate gets a relief
+    # and the plateau stays whole. Both are legal; what is not legal is a seat
+    # the board can reach, or one the plate cannot contain.
+    check("probe seat sits between the plate and the board",
+          P.PLATE_Z_BOTTOM < P.Z_PIN_TOP < P.NEST_T,
+          f"seat {P.Z_PIN_TOP:+.3f} mm -- a "
+          f"{'platform' if P.Z_PIN_TOP > 0 else 'recess'} against a hard stop at 0")
+    stack_bot = P.Z_PIN_TOP - P.PIN_HEAD_BORE_L - P.PIN_BORE_L
+    check("the whole stepped bore fits inside the plate",
+          stack_bot > P.PLATE_Z_BOTTOM,
+          f"seat {P.Z_PIN_TOP:+.2f}, {P.PIN_HEAD_BORE_L:.1f} of counterbore and "
+          f"{P.PIN_BORE_L:.1f} of body bore end at {stack_bot:+.2f}, plate bottom "
+          f"{P.PLATE_Z_BOTTOM:+.1f}")
     check("working stroke inside the probe's travel",
           0.8 <= P.COMPRESSION <= 0.7 * P.PIN_STROKE_MAX,
           f"{P.COMPRESSION:.2f} mm of {P.PIN_STROKE_MAX:.2f} mm")
@@ -181,10 +194,23 @@ def main():
     # been cut to 0.15 mm and one that had been breached outright.
     live = [fp for fp, zf in G.bottom_part_sweep()
             if zf + P.PART_CLEAR_Z < P.Z_PIN_TOP]
+    # What bounds the wall depends on which way the seat went. On a platform it
+    # is the island's own edge; on a recess there is no island, the plate is
+    # solid, and the wall is shared with the nearest neighbouring bore. And the
+    # feature to measure is the WIDEST thing cut at that level, which on a
+    # recessed seat is the relief, not the counterbore.
+    widest = P.PIN_BORE_D
+    if P.Z_PIN_TOP <= 0:
+        widest = max(widest, P.bore(P.PIN_RELIEF_D))
     for tp in G.TEST_POINTS:
         pt = Point(tp["x"], tp["y"])
-        free = min([fp.distance(pt) for fp in live] + [P.PROBE_ISLAND_R])
-        wall = free - P.PIN_BORE_D / 2
+        if P.Z_PIN_TOP > 0:
+            bound = P.PROBE_ISLAND_R
+        else:
+            bound = min(math.hypot(tp["x"] - o["x"], tp["y"] - o["y"])
+                        for o in G.TEST_POINTS if o is not tp) / 2
+        free = min([fp.distance(pt) for fp in live] + [bound])
+        wall = free - widest / 2
         # 0.34 mm is one extrusion on a 0.4 mm nozzle; below that the slicer
         # drops the wall and the counterbore opens out of the side.
         check(f"{tp['net']:8s} collar wall at the counterbore", wall >= 0.34,
@@ -359,9 +385,9 @@ def main():
     check("material left under a blind lid insert", left >= 3.0,
           f"{left:.1f} mm of boss below the hole, down to the floor")
     # an M3 x 12 must reach the insert without bottoming in the hole
-    cbore = 3.0
-    stick = 12.0 - (abs(P.PLATE_Z_BOTTOM) - cbore)
-    check("M3 x 12 engages the insert without bottoming out",
+    cbore = P.MOUNT_SCREW_CBORE
+    stick = P.MOUNT_SCREW_L - (abs(P.PLATE_Z_BOTTOM) - cbore)
+    check(f"M3 x {P.MOUNT_SCREW_L:.0f} engages the insert without bottoming out",
           P.INSERT_M3_H <= stick < P.MOUNT_INSERT_DEPTH,
           f"{stick:.1f} mm of screw past the plate into a "
           f"{P.MOUNT_INSERT_DEPTH:.0f} mm hole, engaging a {P.INSERT_M3_H:.0f} mm insert")
@@ -386,6 +412,12 @@ def main():
     check("locating ribs bracket the case, not the cavity", span_x - L <= 4.0,
           f"rib faces {span_x:.0f} mm apart on a {L:.0f} mm case "
           f"-> {span_x - L:.0f} mm of slop")
+    sb = stand.bounding_box()
+    check("nothing on the stand escapes its own outline",
+          sb.min.X >= P.STAND_X[0] - 1e-6 and sb.max.X <= P.STAND_X[1] + 1e-6 and
+          sb.min.Y >= P.STAND_Y[0] - 1e-6 and sb.max.Y <= P.STAND_Y[1] + 1e-6,
+          f"bbox x {sb.min.X:+.2f}..{sb.max.X:+.2f}, y {sb.min.Y:+.2f}..{sb.max.Y:+.2f} "
+          f"against {P.STAND_X} x {P.STAND_Y}")
     check("cavity sits on the floor", P.STLINK_TOP_Z - ch >= fz - 0.01,
           f"case bottom z={P.STLINK_TOP_Z - ch:.1f}, floor top z={fz:.1f}")
     check("cavity is inside the stand walls",
@@ -397,24 +429,37 @@ def main():
           f"y {P.STLINK_Y_CENTRE-cw/2:+.0f}..{P.STLINK_Y_CENTRE+cw/2:+.0f} inside "
           f"x {P.STAND_X[0]+P.STAND_WALL:+.0f}..{P.STAND_X[1]-P.STAND_WALL:+.0f}, "
           f"y {P.STAND_Y[0]+P.STAND_WALL:+.0f}..{P.STAND_Y[1]-P.STAND_WALL:+.0f}")
+    # Against the case and the two cable ends. Testing the padded room instead
+    # failed a boss tucked in the -Y corner of the header space, 24 mm off the
+    # ribbon's own centreline, where it fouls nothing.
     for x, y in P.MOUNT_SCREW_XY:
-        clear = (abs(x - P.STLINK_X_CENTRE) > cl / 2 + P.MOUNT_BOSS_R or
-                 abs(y - P.STLINK_Y_CENTRE) > cw / 2 + P.MOUNT_BOSS_R)
-        check(f"lid boss ({x:+6.1f},{y:+6.1f}) clears the cavity", clear)
+        dy = abs(y - P.STLINK_Y_CENTRE)
+        off_case = (abs(x - case_x) > L / 2 + P.MOUNT_BOSS_R or
+                    dy > cw / 2 + P.MOUNT_BOSS_R)
+        off_ribbon = (x > case_x - L / 2 - P.MOUNT_BOSS_R or
+                      dy > P.STLINK_RIBBON_W / 2 + P.MOUNT_BOSS_R)
+        off_usb = (x < case_x + L / 2 + P.MOUNT_BOSS_R or
+                   dy > P.STLINK_USB_W / 2 + P.MOUNT_BOSS_R)
+        check(f"lid boss ({x:+6.1f},{y:+6.1f}) clears case and cables",
+              off_case and off_ribbon and off_usb,
+              f"{dy:.1f} mm off the case centreline")
     # the locating ribs must actually stand proud of the floor, not be half
     # buried in it -- Box centres on its Pos, which is easy to get wrong
     for sx in (-1, 1):
         for sy in (-1, 1):
+            # 3 mm INWARD along the leg. Probing the corner itself only
+            # worked while the legs were centred on it, which is what put a
+            # 7 mm tail through the -Y wall once the case moved up against it.
             rx = case_x + sx * (span_x / 2 + 1.5)
-            ry = P.STLINK_Y_CENTRE + sy * cw / 2
-            probe = Pos(rx, ry, fz + P.STLINK_RIB_H - 0.3) * Box(2.0, 6.0, 0.4)
+            ry = P.STLINK_Y_CENTRE + sy * cw / 2 - sy * 3.0
+            probe = Pos(rx, ry, fz + P.STLINK_RIB_H - 0.3) * Box(2.0, 4.0, 0.4)
             got = vol(stand.intersect(probe))
             check(f"locating rib ({rx:+6.1f},{ry:+6.1f}) stands proud",
                   got > 0.8 * probe.volume,
                   f"{100*got/probe.volume:.0f}% solid at "
                   f"{P.STLINK_RIB_H - 0.3:.1f} mm above the floor")
     # the USB cable must have a way out
-    usb = Pos(P.STAND_X[1], 0, P.STLINK_TOP_Z - ch / 2) * \
+    usb = Pos(P.STAND_X[1], P.STLINK_Y_CENTRE, P.STLINK_TOP_Z - ch / 2) * \
         Box(3 * P.STAND_WALL, P.STLINK_USB_W - 1, P.STLINK_USB_H - 1)
     check("USB opening goes right through the +X wall",
           vol(stand.intersect(usb)) < 0.02,
@@ -422,10 +467,18 @@ def main():
           f"{vol(stand.intersect(usb)):.4f} mm3 in the way")
 
     # the case must not foul the probe tails once the lid is on
+    # In 3D. The P50 keeps its tails above the case; the P100's reach 22 mm
+    # past its roof and clear it in PLAN instead, so a Z comparison would call
+    # a perfectly good design a collision.
     tail_z = P.Z_PIN_TOP - P.RECEPT_LEN
-    check("fitted case clears the probe tails", tail_z - P.STLINK_TOP_Z >= 1.0,
-          f"tails reach z={tail_z:.2f}, cavity ceiling z={P.STLINK_TOP_Z:.1f}"
-          f" -> {tail_z - P.STLINK_TOP_Z:.2f} mm")
+    gap = min(math.hypot(max(abs(t["x"] - case_x) - L / 2, 0.0),
+                         max(abs(t["y"] - P.STLINK_Y_CENTRE) - Wd / 2, 0.0))
+              for t in G.TEST_POINTS) if tail_z < P.STLINK_TOP_Z else None
+    check("fitted case clears the probe tails",
+          tail_z - P.STLINK_TOP_Z >= 1.0 or (gap is not None and gap >= 1.0),
+          f"tails reach z={tail_z:.2f}, case roof z={P.STLINK_TOP_Z:.1f}"
+          + (f" -> they pass it, {gap:.2f} mm clear in plan" if gap is not None
+             else f" -> {tail_z - P.STLINK_TOP_Z:.2f} mm above it"))
     check("case drops in from above before the lid goes on",
           P.STLINK_TOP_Z < P.PLATE_Z_BOTTOM,
           f"nothing overhangs it: open from z={P.STLINK_TOP_Z:.0f} up to the lid "
@@ -435,9 +488,10 @@ def main():
     print("\nprobe hardware fit")
     bore_depth = P.Z_PIN_TOP - P.PLATE_Z_BOTTOM
     below = P.RECEPT_LEN - bore_depth
-    check("sleeve tail reaches the wiring space", 3.0 <= below <= 12.0,
+    room = P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM
+    check("sleeve tail reaches the wiring space", 3.0 <= below <= room - 4.0,
           f"{below:.2f} mm of sleeve below the plate, in "
-          f"{P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm of clearance")
+          f"{room:.0f} mm of clearance")
     check("sleeve tail clears the bench", below < P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM,
           f"{below:.2f} mm vs {P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm")
     check("gauge brackets the modelled bore",
@@ -461,6 +515,9 @@ def main():
     # derived from the actual body-bore fit, not a hard-coded 0.04 -- the chain
     # used to be insensitive to the parameter it most depends on
     sleeve_play = ((P.PIN_BODY_BORE_D - P.PRINT_HOLE_SHRINK) - P.RECEPT_BODY_D) / 2
+    head_play = max(0.0, ((P.PIN_BORE_D - P.PRINT_HOLE_SHRINK)
+                          - P.RECEPT_HEAD_D) / 2)
+    bearing_sep = (P.PIN_HEAD_BORE_L + P.PIN_BORE_L) / 2
     arm = max(math.hypot(t["x"], t["y"]) for t in G.TEST_POINTS)
     span = math.dist(G.HOLES[P.LOCATOR_PRIMARY[0]], G.HOLES[P.LOCATOR_PRIMARY[1]])
     links = [
@@ -470,8 +527,13 @@ def main():
         ("base plate pin position, print",    0.100),
         ("base plate bore position, print",   0.100),
         ("sleeve in the body bore",           sleeve_play),
-        ("sleeve tilt over the body bore",
-         (2 * sleeve_play / P.PIN_BORE_L) * P.PIN_PROTRUSION),
+        # Two bearing zones, not one: the counterbore grips the head and the
+        # body bore grips the body, and what limits tilt is the clearance
+        # divided by the distance BETWEEN them. Charging the whole lever to
+        # the body bore alone made the P100 -- which guides mostly on its
+        # 7.5 mm head -- look 0.08 mm worse than it is.
+        ("sleeve tilt between head and body bores",
+         ((head_play + sleeve_play) / bearing_sep) * P.PIN_PROTRUSION),
     ]
     worst = sum(v for _, v in links)
     rss = math.sqrt(sum(v * v for _, v in links))
@@ -483,6 +545,22 @@ def main():
     check("cover pads stand off further than the tallest top-side part",
           P.COVER_PAD_H > P.PART_H_TOP_MAIN,
           f"{P.COVER_PAD_H} mm standoff vs {P.PART_H_TOP_MAIN} mm part")
+    # What the clamp actually has to hold. The P100 probe is rated 180 g where
+    # the P50 is 75, so this tripled without anything else in the design
+    # changing, and it is worth stating rather than assuming.
+    probe_n = (len(G.TEST_POINTS) * P.PIN_FORCE_G
+               * (P.COMPRESSION / (2 / 3 * P.PIN_STROKE_MAX)) / 1000) * 9.81
+    d = P.SPRING_OD - P.SPRING_WIRE_D
+    k = (79300 * P.SPRING_WIRE_D ** 4
+         / (8 * d ** 3 * P.SPRING_ACTIVE_COILS))          # N/mm
+    spring_n = len(P.POST_XY) * k * P.TRAVEL
+    load = probe_n + spring_n
+    check("clamp load is well inside the GH-201's rating",
+          load <= P.CLAMP_RATING_KG * 9.81 / 3,
+          f"{load:.1f} N = {load / 9.81:.2f} kg ({probe_n:.1f} N of probe at "
+          f"{P.COMPRESSION:.2f} mm + {spring_n:.1f} N of spring), against "
+          f"{P.CLAMP_RATING_KG:.0f} kg rated")
+
     dw = P.PEDESTAL_X[1] - P.PEDESTAL_X[0]
     dd = P.PEDESTAL_Y[1] - P.PEDESTAL_Y[0]
     check("clamp deck is big enough for the clamp footprint",
