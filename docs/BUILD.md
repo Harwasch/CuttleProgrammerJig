@@ -214,12 +214,50 @@ island to be cut back and the wall is shared with the neighbouring bore instead.
 **Calibrate first, as always**, on the P100 gauge: it steps 1.95 to 2.40 and you
 are looking for the bore an R100 head just enters.
 
-Three numbers in `params.py` are read off the vendor drawing rather than
-measured, and all three are flagged there: `PIN_PROTRUSION` (8.35),
-`PIN_STROKE_MAX` (3.50) and `RECEPT_HEAD_L` (7.5, the dimension that separates
-the −1W/−4W/−5W variants). `PIN_PROTRUSION` is the one that matters — the whole
-stack-up derives from it, so measure a probe in a receptacle with calipers
-before you commit to a plate.
+### What to measure before printing a P100 plate
+
+The receptacle's head bottoms on a shoulder at a **fixed** depth, so the probe
+tip ends up at
+
+```
+(seat − RECEPT_HEAD_L) + head_as_measured + protrusion_as_measured
+```
+
+which means an error in **either** `RECEPT_HEAD_L` or `PIN_PROTRUSION` lands on
+the working stroke one for one. Those two are the pair the whole stack-up rests
+on, and both are read off the vendor drawing rather than measured. Their
+combined error has to stay inside **−0.80 / +0.85 mm**, which is the 1.60 mm
+working stroke moving between the 0.80 mm minimum and 70 % of the 3.50 mm full
+travel.
+
+| Measure | Model | How | Window |
+|---|---|---|---|
+| **`PIN_PROTRUSION`** | 8.35 | Seat a probe in a receptacle, measure the assembly's overall length, subtract the bare receptacle's. That difference is how far the tip stands proud. | see above |
+| **`RECEPT_HEAD_L`** | 7.5 | Length of the enlarged section at the top, from the top face down to where the OD drops to the plain Ø1.67 body. This is the counterbore depth. | see above |
+| `RECEPT_HEAD_D` | 1.90 | OD of that top section | 1.84–1.92 |
+| `RECEPT_BODY_D` | 1.67 | OD of the plain tube | 1.55–1.69 |
+| `PIN_STROKE_MAX` | 3.50 | Probe free length minus its length pressed fully home | ≥ 2.29 |
+| `RECEPT_LEN` | 39.0 | Overall | 16.25–47.25 |
+
+The fit gauge reads `RECEPT_HEAD_L` for you as a by-product: its bores are
+blind and exactly `RECEPT_HEAD_L` deep, so push a receptacle in **head first**
+and the step where it drops to the body diameter should come out flush with the
+coupon's face. Proud or sunk by *x* means your head is longer or shorter by *x*.
+
+Then hand the numbers to the checker, which reports each against its window,
+combines the two that matter, and tells you whether it is a model correction or
+a reprint:
+
+```bash
+JIG_PINS=P100 python3 tools/check_pins.py \
+    --protrusion 8.4 --head 7.6 --head-dia 1.91 --body-dia 1.68
+```
+
+`STLINK_CASE` and the four `CLAMP_*` numbers are unchanged from the P50 build,
+but the P100 plate is a new print with new insert positions — so if you never
+verified `CLAMP_SPINDLE_TO_ROW` (24.6 mm, spindle axis to the nearer mounting
+row, inferred from the drawing), do it now, because fixed inserts give up the
+fore-and-aft trim the clamp's own slots allowed.
 
 ## Assembly
 
