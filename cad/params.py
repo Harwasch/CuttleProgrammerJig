@@ -26,6 +26,89 @@ FILM_T               = 0.12
 PART_H_BOTTOM        = 2.585   # tallest bottom-side part, from the STEP
 PART_H_TOP_MAIN      = 1.285   # tallest top-side part on the main rigid section
 
+# ------------------------------------------------------- the print model ----
+# Calibrated from the fit gauge, and the SINGLE source for every fit in this
+# file. These used to be literals buried inside verify.py, so changing
+# PIN_BORE_D for a different printer -- the whole documented tuning workflow --
+# silently left every other fit computed for the old machine.
+#
+# Recalibrate BOTH together: PIN_BORE_D is what the gauge measures, and
+# PRINT_HOLE_SHRINK is PIN_BORE_D minus the sleeve head it just accepts.
+# MEASURED AT TWO DIAMETERS NOW, AND IT IS NOT THE SAME NUMBER:
+#
+#   modelled Ø1.20 accepted a Ø0.98 R50 head   -> shrink 0.22   (P50 gauge)
+#   modelled Ø2.00 accepted a Ø1.90 R100 head  -> shrink 0.10   (P100 gauge)
+#
+# Hole shrink halves between Ø1 and Ø1.9 on this printer. That is the expected
+# shape -- a small hole loses more, because the perimeter is laid on the inside
+# of a tight curve -- but the design was built on the single Ø1.2 figure, and
+# carrying it to the P100's bores would have modelled the body bore at Ø1.81
+# and printed it at Ø1.59: an interference fit on a Ø1.67 sleeve that would
+# never have gone in.
+HOLE_SHRINK_CAL      = [(1.20, 0.22), (2.00, 0.10)]
+
+
+def hole_shrink(d):
+    """How far under nominal a modelled hole of diameter `d` comes out.
+
+    Linear between the calibration points, HELD FLAT outside them. Two points
+    cannot support an extrapolation: a straight line through these two crosses
+    zero at Ø2.7 and goes negative, which no printer does.
+    """
+    if d <= HOLE_SHRINK_CAL[0][0]:
+        return HOLE_SHRINK_CAL[0][1]
+    if d >= HOLE_SHRINK_CAL[-1][0]:
+        return HOLE_SHRINK_CAL[-1][1]
+    for (d0, s0), (d1, s1) in zip(HOLE_SHRINK_CAL, HOLE_SHRINK_CAL[1:]):
+        if d0 <= d <= d1:
+            return s0 + (s1 - s0) * (d - d0) / (d1 - d0)
+
+
+def printed(d):
+    """What a modelled hole of diameter `d` actually comes out at."""
+    return d - hole_shrink(d)
+
+
+def hole_bore(target):
+    """Modelled hole diameter that PRINTS at `target`. The inverse of printed()."""
+    lo, hi = target, target + 1.0
+    for _ in range(48):
+        mid = (lo + hi) / 2
+        if printed(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2, 3)
+
+
+# The SMALL-hole figure, and the one every feature outside the probe bores is
+# modelled with. It is the conservative end: if the true shrink at Ø4 is nearer
+# 0.10, a hole modelled with 0.22 comes out 0.12 mm LARGE, which on a clearance
+# fit runs loose and on the heat-set holes stays inside the Ø3.90-Ø4.50 window.
+# Print `shrink_gauge` and measure its bores to replace this with a real number
+# -- see hole_shrink()'s calibration list, which takes more than two points.
+PRINT_HOLE_SHRINK    = HOLE_SHRINK_CAL[0][1]
+PRINT_BOSS_GROW      = 0.08    # a vertical boss renders this much OVER nominal
+# Modelled diameters for shrink_gauge: plain through holes, measured with the
+# caliper's inside jaws. shrink at that diameter = modelled - measured.
+GAUGE_PLAIN_BORES    = [4.0, 6.0, 9.0, 12.0]
+
+
+def bore(nominal):
+    """Model a hole so it PRINTS at `nominal`, on the small-hole figure."""
+    return nominal + PRINT_HOLE_SHRINK
+
+
+def shaft(nominal):
+    """Model a boss so it PRINTS at `nominal`."""
+    return nominal - PRINT_BOSS_GROW
+
+
+def fit(hole_d, shaft_d):
+    """Radial clearance as printed, for a modelled hole/shaft pair."""
+    return ((hole_d - PRINT_HOLE_SHRINK) - (shaft_d + PRINT_BOSS_GROW)) / 2
+
+
 # ------------------------------------------------------------ pogo pins -----
 # TWO pin families, selected by the JIG_PINS environment variable:
 #
@@ -82,14 +165,17 @@ else:
     # the P50 number was calibrated to. It lands the body bore at Ø1.71, which
     # is the vendor's own stated drilling size of 1.70 mm -- an independent
     # confirmation that the print model transfers to this size.
-    PIN_BORE_D       = 2.12    # = bore(1.90); recalibrate on the fit gauge
+    PIN_BORE_D       = 2.00    # MEASURED on the P100 fit gauge: the R100 head
+                               # entered the 200 bore and nothing smaller
     PIN_BORE_L       = 5.0     # with the 7.5 mm head above it, two bearing
                                # zones 6.25 mm apart -- and tilt over a probe
                                # that stands 8.35 mm proud is what the pad
                                # budget actually spends its margin on
     PIN_CLEAR_D      = 2.60    # must pass the Ø1.9 head
-    GAUGE_BORES      = [1.95, 2.00, 2.05, 2.10, 2.15,
-                        2.20, 2.25, 2.30, 2.35, 2.40]
+    # re-centred on the 2.00 the gauge actually read; the first print had it
+    # one slot off the bottom of the range
+    GAUGE_BORES      = [1.80, 1.85, 1.90, 1.95, 2.00,
+                        2.05, 2.10, 2.15, 2.20, 2.25]
 
 # Probe bores are printed to final size -- no drilling. FDM renders a small
 # vertical hole undersize, by an amount that depends on your printer, nozzle,
@@ -112,41 +198,17 @@ else:
 # head cannot enter the body bore, so it bottoms with its top flush with the
 # seat, by construction.
 PIN_HEAD_BORE_L      = RECEPT_HEAD_L
-PIN_BODY_BORE_D      = PIN_BORE_D - (RECEPT_HEAD_D - RECEPT_BODY_D) + 0.04
+# SOLVED, not offset from PIN_BORE_D. Head and body bores are different
+# diameters and so shrink by different amounts; subtracting the step between
+# the sleeve's two diameters only worked while shrink was assumed constant.
+PIN_BODY_BORE_D      = hole_bore(RECEPT_BODY_D + 0.04)
 PIN_MOUTH_CHAMFER    = 0.15    # replaces the old oversized lead-in. Small: on
                                # the two crowded bores it is the widest feature
                                # and so sets the thinnest wall.
 # Only used when the seat is BELOW the plateau (the P100 family): a short
 # relief from the plateau down to the seat, wide enough to pass the head so the
 # receptacle can still be pulled out upwards.
-PIN_RELIEF_D         = RECEPT_HEAD_D + 0.5
-
-# ------------------------------------------------------- the print model ----
-# Calibrated from the fit gauge, and the SINGLE source for every fit in this
-# file. These used to be literals buried inside verify.py, so changing
-# PIN_BORE_D for a different printer -- the whole documented tuning workflow --
-# silently left every other fit computed for the old machine.
-#
-# Recalibrate BOTH together: PIN_BORE_D is what the gauge measures, and
-# PRINT_HOLE_SHRINK is PIN_BORE_D minus the sleeve head it just accepts.
-PRINT_HOLE_SHRINK    = 0.22    # a vertical hole renders this much UNDER nominal
-PRINT_BOSS_GROW      = 0.08    # a vertical boss renders this much OVER nominal
-
-
-def bore(nominal):
-    """Model a hole so it PRINTS at `nominal`."""
-    return nominal + PRINT_HOLE_SHRINK
-
-
-def shaft(nominal):
-    """Model a boss so it PRINTS at `nominal`."""
-    return nominal - PRINT_BOSS_GROW
-
-
-def fit(hole_d, shaft_d):
-    """Radial clearance as printed, for a modelled hole/shaft pair."""
-    return ((hole_d - PRINT_HOLE_SHRINK) - (shaft_d + PRINT_BOSS_GROW)) / 2
-
+PIN_RELIEF_D         = hole_bore(RECEPT_HEAD_D + 0.5)
 
 # --------------------------------------------------------------- travel -----
 # TRAVEL is DERIVED at the bottom of the spring block. Nothing in the geometry

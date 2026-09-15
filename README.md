@@ -121,7 +121,9 @@ produce. If you are reading an older revision, do not trust its output.
 `JIG_PINS=P100 python3 jig.py` builds the same jig for a **P100-B1 probe in an
 R100-4S receptacle** instead of the default P50/R50 pair, into `cad/out/p100/`.
 It is a new `base_plate`, `stand` and `fit_gauge`; the `nest` and `cover` carry
-straight over. Both variants build and verify from the same code, and
+straight over. Its gauge also gave the design a second hole-shrink calibration
+point — 0.10 mm at Ø2.0 against 0.22 mm at Ø1.2 — so the print model
+interpolates with diameter instead of using one constant. Both variants build and verify from the same code, and
 `cad/tools/compare_families.py` reports which parts actually differ. See
 [docs/BUILD.md](docs/BUILD.md) for why the bigger pin also moves the ST-Link.
 

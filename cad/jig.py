@@ -404,8 +404,40 @@ def build_probes():
     return out
 
 
+def build_shrink_gauge():
+    """Plain through holes at four diameters, to calibrate hole shrink where
+    the design's larger features live.
+
+    The fit gauge answers one question -- what bore takes this sleeve -- and it
+    answers it at ONE diameter. That was fine until the P100 gauge read 2.00
+    where the P50 gauge read 1.20 on a sleeve only 0.92 mm bigger: shrink is a
+    function of diameter, not a constant, and the Ø4 to Ø12 holes in this
+    design have never been measured at all. Print this, run the caliper's
+    inside jaws down each hole, and shrink at that diameter is the modelled
+    number engraved beside it minus what you read.
+    """
+    gap, margin, wall = 5.0, 5.0, 4.0
+    xs, x = [], margin
+    for d in P.GAUGE_PLAIN_BORES:
+        x += d / 2
+        xs.append(x)
+        x += d / 2 + gap
+    w = x - gap + margin
+    big = max(P.GAUGE_PLAIN_BORES)
+    hy, ly = big / 2 + wall, -6.0
+    h = hy + big / 2 + wall + 12.0
+    part = extrude(rrect((0, w), (ly - 6.0, ly - 6.0 + h), 2.0), amount=5.0)
+    for x, d in zip(xs, P.GAUGE_PLAIN_BORES):
+        part -= Pos(x, hy, -0.1) * extrude(Circle(d / 2), amount=5.2)
+        part -= Pos(x, ly, 5.0) * extrude(
+            Text(f"{d:g}", font_size=4.0, align=(Align.CENTER, Align.CENTER)),
+            amount=-0.6)
+    return part
+
+
 PARTS_TO_BUILD = {
     "base_plate": build_base_plate,
+    "shrink_gauge": build_shrink_gauge,
     "stand": build_stand,
     "nest": build_nest,
     "cover": build_cover,

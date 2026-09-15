@@ -173,8 +173,10 @@ def main():
     # straight through and its Z is set by how hard you pushed -- which made
     # PIN_PROTRUSION, the number the whole stack-up derives from, an assembly
     # variable. This is what the old geometry did.
-    body_printed = P.PIN_BODY_BORE_D - P.PRINT_HOLE_SHRINK
-    head_printed = P.PIN_BORE_D - P.PRINT_HOLE_SHRINK
+    # printed(), not a single constant: the counterbore and the body bore
+    # are different diameters and shrink by different amounts.
+    body_printed = P.printed(P.PIN_BODY_BORE_D)
+    head_printed = P.printed(P.PIN_BORE_D)
     check("head cannot enter the body bore -> the sleeve bottoms flush",
           body_printed < P.RECEPT_HEAD_D - 0.02,
           f"body bore prints Ø{body_printed:.3f} against a Ø{P.RECEPT_HEAD_D} head "
@@ -201,7 +203,7 @@ def main():
     # recessed seat is the relief, not the counterbore.
     widest = P.PIN_BORE_D
     if P.Z_PIN_TOP <= 0:
-        widest = max(widest, P.bore(P.PIN_RELIEF_D))
+        widest = max(widest, P.PIN_RELIEF_D)
     for tp in G.TEST_POINTS:
         pt = Point(tp["x"], tp["y"])
         if P.Z_PIN_TOP > 0:
@@ -494,6 +496,23 @@ def main():
           f"{room:.0f} mm of clearance")
     check("sleeve tail clears the bench", below < P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM,
           f"{below:.2f} mm vs {P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm")
+    for d, sh in P.HOLE_SHRINK_CAL:
+        check(f"print model reproduces its Ø{d:.2f} calibration point",
+              abs(P.hole_shrink(d) - sh) < 1e-9,
+              f"shrink {P.hole_shrink(d):.3f} -> prints Ø{P.printed(d):.3f}")
+    # Outside the calibrated span the model holds the nearest measurement flat,
+    # which is a guess. How far outside is the thing to bound: shrink rises as
+    # diameter falls, so a bore below the smallest calibration point prints
+    # TIGHTER than modelled, and on a press fit that is the direction that
+    # seizes.
+    c_lo, c_hi = P.HOLE_SHRINK_CAL[0][0], P.HOLE_SHRINK_CAL[-1][0]
+    out = max(c_lo - P.PIN_BODY_BORE_D, P.PIN_BORE_D - c_hi, 0.0)
+    check("probe bores sit inside the calibrated range, or barely outside it",
+          out <= 0.20,
+          f"bores Ø{P.PIN_BODY_BORE_D:.2f}-Ø{P.PIN_BORE_D:.2f} against measured "
+          f"Ø{c_lo:.2f}-Ø{c_hi:.2f}"
+          + (" -- interpolated throughout" if out == 0 else
+             f" -- {out:.2f} mm extrapolated, shrink held flat there"))
     check("gauge brackets the modelled bore",
           min(P.GAUGE_BORES) < P.PIN_BORE_D < max(P.GAUGE_BORES),
           f"{P.PIN_BORE_D} mm sits inside {min(P.GAUGE_BORES)}-{max(P.GAUGE_BORES)} mm")
@@ -514,9 +533,8 @@ def main():
     pin_clear = (2.2 - pin_printed) / 2
     # derived from the actual body-bore fit, not a hard-coded 0.04 -- the chain
     # used to be insensitive to the parameter it most depends on
-    sleeve_play = ((P.PIN_BODY_BORE_D - P.PRINT_HOLE_SHRINK) - P.RECEPT_BODY_D) / 2
-    head_play = max(0.0, ((P.PIN_BORE_D - P.PRINT_HOLE_SHRINK)
-                          - P.RECEPT_HEAD_D) / 2)
+    sleeve_play = (P.printed(P.PIN_BODY_BORE_D) - P.RECEPT_BODY_D) / 2
+    head_play = max(0.0, (P.printed(P.PIN_BORE_D) - P.RECEPT_HEAD_D) / 2)
     bearing_sep = (P.PIN_HEAD_BORE_L + P.PIN_BORE_L) / 2
     arm = max(math.hypot(t["x"], t["y"]) for t in G.TEST_POINTS)
     span = math.dist(G.HOLES[P.LOCATOR_PRIMARY[0]], G.HOLES[P.LOCATOR_PRIMARY[1]])
@@ -612,11 +630,18 @@ def main():
           f"{P.INSERT_M3_HOLE_DEPTH} mm hole for a {P.INSERT_M3_H} mm insert")
     # AS PRINTED, not as modelled. A modelled Ø4.00 printed Ø3.78, under the
     # insert's own Ø3.90 tip, so it could not start square.
-    ins_printed = P.INSERT_M3_HOLE_D - P.PRINT_HOLE_SHRINK
+    #
+    # Across the WHOLE measured shrink range, because nothing has been measured
+    # at Ø4 -- the two calibration points are 0.22 at Ø1.2 and 0.10 at Ø2.0,
+    # and this hole has to survive either being true up here.
+    shrinks = [sh for _, sh in P.HOLE_SHRINK_CAL]
+    lo_p = P.INSERT_M3_HOLE_D - max(shrinks)
+    hi_p = P.INSERT_M3_HOLE_D - min(shrinks)
     check("insert hole PRINTS between the tip and the knurl",
-          P.INSERT_M3_TIP_D < ins_printed < P.INSERT_M3_KNURL_D,
-          f"modelled Ø{P.INSERT_M3_HOLE_D:.2f} -> prints Ø{ins_printed:.2f}, "
-          f"between Ø{P.INSERT_M3_TIP_D} and Ø{P.INSERT_M3_KNURL_D}")
+          P.INSERT_M3_TIP_D < lo_p and hi_p < P.INSERT_M3_KNURL_D,
+          f"modelled Ø{P.INSERT_M3_HOLE_D:.2f} -> prints Ø{lo_p:.2f}-Ø{hi_p:.2f} "
+          f"over the measured shrink range, inside Ø{P.INSERT_M3_TIP_D}-"
+          f"Ø{P.INSERT_M3_KNURL_D}")
     # the spindle must land on the cover's dimple, not just somewhere on it.
     # Tolerance is 0.5 mm on BOTH axes: the old check allowed COVER_DIMPLE_R of
     # X error, which passed a 3.6 mm miss when the dimple moved.
