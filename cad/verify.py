@@ -194,16 +194,16 @@ def main():
     # Collar wall, measured in 2D against the platform relief cuts. The old
     # check was a >55%-solid ring, loose enough to pass a bore whose wall had
     # been cut to 0.15 mm and one that had been breached outright.
-    live = [fp for fp, zf in G.bottom_part_sweep()
-            if zf + P.PART_CLEAR_Z < P.Z_PIN_TOP]
-    # What bounds the wall depends on which way the seat went. On a platform it
-    # is the island's own edge; on a recess there is no island, the plate is
-    # solid, and the wall is shared with the nearest neighbouring bore. And the
-    # feature to measure is the WIDEST thing cut at that level, which on a
-    # recessed seat is the relief, not the counterbore.
+    # WITH DEPTH. A relief cut starts at the part's own floor and runs upward,
+    # so it thins the collar over the TOP of the counterbore and leaves sound
+    # collar below it. Projecting that into 2D and calling the whole bore thin
+    # was over-strict -- and it mirrors jig.py's rule that a part clearing the
+    # platform top does not cut the islands at all.
     widest = P.PIN_BORE_D
     if P.Z_PIN_TOP <= 0:
         widest = max(widest, P.PIN_RELIEF_D)
+    islands = G.probe_islands()
+    cb_bot = P.Z_PIN_TOP - P.PIN_HEAD_BORE_L
     for tp in G.TEST_POINTS:
         pt = Point(tp["x"], tp["y"])
         if P.Z_PIN_TOP > 0:
@@ -211,13 +211,25 @@ def main():
         else:
             bound = min(math.hypot(tp["x"] - o["x"], tp["y"] - o["y"])
                         for o in G.TEST_POINTS if o is not tp) / 2
-        free = min([fp.distance(pt) for fp in live] + [bound])
-        wall = free - widest / 2
+        thin_from = P.Z_PIN_TOP          # collar is sound below this
+        worst = bound - widest / 2
+        for fp, zf in G.bottom_part_sweep():
+            if zf + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
+                continue                 # jig.py protects the island here
+            w = fp.distance(pt) - widest / 2
+            if w >= 0.34:
+                continue
+            thin_from = min(thin_from, max(zf, cb_bot))
+            worst = min(worst, w)
+        sound = thin_from - cb_bot
         # 0.34 mm is one extrusion on a 0.4 mm nozzle; below that the slicer
         # drops the wall and the counterbore opens out of the side.
-        check(f"{tp['net']:8s} collar wall at the counterbore", wall >= 0.34,
-              f"{wall:.3f} mm"
-              + ("" if free >= P.PROBE_ISLAND_R else "  (cut back by a bottom-side part)"))
+        ok = worst >= 0.34 or sound >= 1.5
+        check(f"{tp['net']:8s} collar wall at the counterbore", ok,
+              f"{worst:.3f} mm"
+              + ("" if sound >= P.PIN_HEAD_BORE_L - 1e-9 else
+                 f" over the top {P.PIN_HEAD_BORE_L - sound:.2f} mm, "
+                 f"{sound:.2f} mm of sound collar below it"))
 
     # ------------------------------------------- interference, clamp closed --
     print("\ninterference, clamp closed (nest on the hard stop)")
@@ -634,9 +646,14 @@ def main():
     # Across the WHOLE measured shrink range, because nothing has been measured
     # at Ø4 -- the two calibration points are 0.22 at Ø1.2 and 0.10 at Ø2.0,
     # and this hole has to survive either being true up here.
-    shrinks = [sh for _, sh in P.HOLE_SHRINK_CAL]
-    lo_p = P.INSERT_M3_HOLE_D - max(shrinks)
-    hi_p = P.INSERT_M3_HOLE_D - min(shrinks)
+    # The band at THIS diameter, not the whole small-hole range. Above the
+    # calibrated range the model holds the last measurement; shrink cannot go
+    # up again as the hole grows, and it cannot go below zero, so [0, that] is
+    # the honest bracket. Using the Ø1.35 figure of 0.40 up here would have
+    # been nonsense -- it is a measure of how badly a 2-nozzle-wide hole closes.
+    sh_hi = P.hole_shrink(P.INSERT_M3_HOLE_D)
+    lo_p = P.INSERT_M3_HOLE_D - sh_hi
+    hi_p = P.INSERT_M3_HOLE_D
     check("insert hole PRINTS between the tip and the knurl",
           P.INSERT_M3_TIP_D < lo_p and hi_p < P.INSERT_M3_KNURL_D,
           f"modelled Ø{P.INSERT_M3_HOLE_D:.2f} -> prints Ø{lo_p:.2f}-Ø{hi_p:.2f} "

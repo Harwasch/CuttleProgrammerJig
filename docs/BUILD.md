@@ -97,62 +97,97 @@ and it could be opened into a hole clean through the cover with no complaint.
 
 ## Calibrate the probe bores first
 
-There is no drilling. The probe bores print to final size — but FDM renders a
-small vertical hole undersize by an amount specific to your printer, nozzle,
-material and speed, so you calibrate once:
+The probe bores print to final size — but FDM renders a small vertical hole
+undersize by an amount specific to your printer, nozzle, material and speed, so
+you calibrate once. **Calibrate with the RECEPTACLE**, which is what sits in the
+bore. Reading the gauge with the probe in hand instead is the one mistake that
+has actually been made here, and it cost a base plate: the P50-B1's barrel is
+Ø0.68 and the R50-2S's head is Ø0.98, so the answer came out 0.30 mm small and
+no sleeve would seat.
 
-1. Print `fit_gauge.stl` (80 × 14 × 5 mm, about 10 minutes) in the **same
-   material and profile** you will use for the base plate. It has ten **blind
-   counterbores 2.5 mm deep** labelled 90 to 135, in hundredths of a
-   millimetre. The P100 gauge steps 195 to 240 with 7.5 mm counterbores.
+1. Print `fit_gauge.stl` (111 × 30 × 12.5 mm, about 35 minutes) in the **same material and profile** you will use for
+   the base plate. Two rows of ten, labelled in hundredths of a millimetre:
 
-   The depth matters: the counterbore is one receptacle head deep, so the coupon reproduces
-   exactly the feature it is calibrating. It used to be an 11 mm through hole
-   for what is a 2.5 mm counterbore — a deeper hole tapers more and reads
-   tighter, biasing the one measurement the whole design hangs on.
-2. Press an R50 sleeve into each (P100: an R100, on a gauge stepping 1.80 to
-   2.25). You want the smallest bore whose **head seats
-   flush** with a firm thumb push and does not rattle. The answer must have a
-   bore too tight below it **and** one visibly loose above it — if the sleeve
-   only enters the largest, the range has not bracketed your printer and you
-   need to shift `GAUGE_BORES` up and print again.
-3. Put that number in `PIN_BORE_D` in [`cad/params.py`](../cad/params.py), add
-   the point `(PIN_BORE_D, PIN_BORE_D − your head diameter)` to
-   `HOLE_SHRINK_CAL`, and run `python3 jig.py`.
+   | row | depth | how to read it | sets |
+   |---|---|---|---|
+   | **HEAD** | one receptacle head | push the sleeve in **head first**; the smallest bore the head goes fully into with a firm thumb push, the step down to the body ending flush with the face | `PIN_BORE_D` |
+   | **BODY** | one body bore | push the sleeve in **tail first**; the smallest bore the body slides down without force | `PIN_BODY_BORE_D` |
+
+   Two rows because the plate needs two bores and at this size they cannot be
+   derived from one another: shrink changes fast enough down here that the
+   counterbore and the body bore end up barely 0.05 mm apart as modelled, which
+   is less than the uncertainty in either.
+
+   Each row is bored to the depth of the feature it stands for, because a
+   deeper hole tapers more and reads tighter. Every bore has an eject hole
+   through the back — a press fit in a blind hole otherwise stays there.
+
+2. The answer must have a bore too tight below it **and** one visibly loose
+   above it. If the sleeve only enters the largest, the range has not bracketed
+   your printer: shift `GAUGE_BORES` up and print again. The P50 range steps
+   1.30 to 1.75 and the P100 range 1.80 to 2.25.
+
+3. Put the two numbers in `PIN_BORE_D` and `PIN_BODY_BORE_D` in
+   [`cad/params.py`](../cad/params.py), add the point
+   `(PIN_BORE_D, PIN_BORE_D − your head diameter)` to `HOLE_SHRINK_CAL`, and
+   run `python3 jig.py`.
+
+### If the P50 bores will not come out
+
+At Ø0.98 a printed hole is two and a half nozzle widths across and the printer
+is removing something like 40 % of it. If the gauge will not give you a clean
+answer, the bores are **drillable, and the geometry is already sized for it**:
+Ø1.00 and Ø0.90 are stock drill sizes, and they land exactly where the design
+wants them — a Ø1.00 counterbore on a Ø0.98 head is 0.01 mm of slip, a Ø0.90
+body bore on a Ø0.86 body is the 0.02 mm the design asks for, and a Ø0.98 head
+still cannot enter a Ø0.90 bore, so the depth stop survives. Print the plate,
+run both drills down each bore by hand using the printed hole as the pilot, and
+the fit stops depending on the print model at all.
+
+The P100 family does not have this problem — Ø1.90 and Ø1.71 are comfortable
+for FDM — which is worth knowing if you have both sets of pins.
 
 ### Hole shrink is not one number
 
-This was modelled as a single constant until the P100 gauge was printed, and
-the two readings settle it:
+This was modelled as a single constant, and two gauges settled it:
 
-| gauge | modelled bore that just took the head | head | shrink |
+| gauge | modelled bore | part that just entered | shrink |
 |---|---|---|---|
-| P50 | Ø1.20 | Ø0.98 | **0.22** |
-| P100 | Ø2.00 | Ø1.90 | **0.10** |
+| P100 | Ø2.00 | Ø1.90 R100 head | **0.10** |
+| P50 | Ø1.20 | Ø0.68 P50 **probe** | *withdrawn — wrong part* |
 
-Shrink **halves between Ø1 and Ø1.9**. That is the shape you would expect — a
-small hole loses more, because the perimeter is laid on the inside of a tight
-curve — but carrying the Ø1.2 figure across to the P100 would have modelled its
-body bore at Ø1.81 and printed it at Ø1.59, an interference fit on a Ø1.67
-sleeve that would never have gone in.
+The P50 reading was taken with the probe rather than the receptacle, so the
+0.22 it implied was answering a different question. What survives from that
+bench session is a bound rather than a value: the R50 sleeve would not enter
+the old gauge's **top** slot either, so
 
-So `hole_shrink(d)` interpolates between the calibration points and holds the
-nearest measurement flat outside them. Two points cannot support an
-extrapolation: a straight line through these two crosses zero at Ø2.7 and goes
-negative, which no printer does. `verify.py` reports how far outside the
-measured range any bore sits, and the probe bores are now solved —
-`PIN_BODY_BORE_D = hole_bore(body + 0.04)` — rather than offset from
-`PIN_BORE_D`, because the two bores are different diameters and shrink by
-different amounts.
+```
+printed(1.20) < 0.98   ->   shrink at Ø1.20 > 0.22
+printed(1.35) < 0.98   ->   shrink at Ø1.35 > 0.37
+```
 
-**What has never been measured is Ø4 and up**, which is where the guide posts,
-the registration pins, the insert holes and the magnet fixture's rotor journal
-live. Those all still use the Ø1.2 figure of 0.22, which is the conservative
-end — if the truth up there is nearer 0.10, every one of them comes out about
-0.12 mm large and runs loose rather than binding. The one place that has any
-margin to lose is the magnet fixture's rotor journal, where a Ø9.42 bore
-printing at Ø9.32 instead of Ø9.20 would take the encoder magnet's worst-case
-eccentricity from 0.24 mm to about 0.31, outside the AS5600's ±0.25 mm window.
+`HOLE_SHRINK_CAL` therefore carries one measurement, `(2.00, 0.10)`, and one
+**estimate**, `(1.35, 0.40)`, sitting just above that bound. `hole_shrink(d)`
+interpolates between them and holds the nearer value flat outside — two points
+cannot support an extrapolation. Shrink halving between Ø1.35 and Ø2.00 is the
+shape you would expect: a small hole loses more, because the perimeter is laid
+on the inside of a tight curve.
+
+The estimate is what the new P50 gauge exists to replace. It is not a wild one
+— across the whole plausible range, shrink from 0.37 to 0.50 at Ø1.35, the
+counterbore only moves between Ø1.35 and Ø1.43 — but it is a guess, and the
+P50 plate shipped with `PIN_BORE_D = 1.40` is a guess with it. It rounds **up**
+from the model's Ø1.371 deliberately: the failure the bench hit was a bore too
+small to seat the sleeve at all, while one slightly large still seats and is
+still held by the 8 mm body bore below it.
+
+**Nothing has been measured at Ø4 and up**, which is where the guide posts, the
+registration pins, the insert holes and the magnet fixture's rotor journal
+live. Those use `PRINT_HOLE_SHRINK`, which is a separate constant at 0.22 —
+deliberately not tied to the calibration list, because every one of those
+features has been printed at that figure and works. Shrink cannot rise again as
+the hole grows, so the honest bracket up there is 0 to 0.10 and `verify.py`
+checks across it.
 
 To close that, print **`shrink_gauge`** (56 × 32 × 5 mm, about 15 minutes):
 four plain through holes modelled at Ø4, Ø6, Ø9 and Ø12 with the number
@@ -218,8 +253,9 @@ loom live.
 | clamp load, closed | 10.0 N | 15.0 N |
 | counterbore | Ø0.98 × 2.5 mm | Ø1.90 × 7.5 mm |
 | body bore, as printed | Ø0.90 × 8.0 mm | Ø1.71 × 5.0 mm |
-| measured hole shrink at that bore | 0.22 mm | 0.10 mm |
-| fit gauge range | 0.90–1.35 | 1.80–2.25 |
+| counterbore, as modelled | Ø1.40 (a guess) | Ø2.00 (measured) |
+| hole shrink at the counterbore | ~0.38 mm, estimated | 0.10 mm, measured |
+| fit gauge range | 1.30–1.75 | 1.80–2.25 |
 | base plate | 8 mm thick | 14 mm thick |
 | outline | 145 × 91 mm | 145 × 101 mm |
 | lid screws | M3 × 12 | M3 × 16 |

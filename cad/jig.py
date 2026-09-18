@@ -358,35 +358,51 @@ def build_stand():
 
 
 def build_fit_gauge():
-    """Calibration coupon: one row of bores stepping through GAUGE_BORES.
+    """Calibration coupon, tested with the RECEPTACLE -- not the probe.
 
-    Print it in the material and profile you will use for the base plate, find
-    the hole an R50 sleeve just pushes into, and put that number in
-    PIN_BORE_D. That replaces drilling the plate afterwards.
+    TWO rows, because the plate needs two different bores and at this size they
+    cannot be derived from one another: shrink changes fast enough here that
+    the counterbore and the body bore end up barely 0.05 mm apart as modelled.
+
+      top row, one head deep    push the sleeve in HEAD FIRST. The answer is
+                                the smallest bore whose head goes fully in with
+                                a firm thumb push -- the step down to the body
+                                ending flush with the face -- and does not
+                                rattle. That is PIN_BORE_D.
+      bottom row, body-bore deep  push the sleeve in TAIL FIRST. The answer is
+                                the smallest bore the body slides down without
+                                force. That is PIN_BODY_BORE_D.
+
+    Both rows run the same diameters, and every bore has an eject hole through
+    the back: a press fit in a blind hole otherwise stays there.
     """
     n = len(P.GAUGE_BORES)
-    # The coupon must reproduce the feature it calibrates: a BLIND counterbore
-    # exactly one head deep, with the same mouth chamfer. It used to be an
-    # 11 mm through hole for a 9 mm application -- a deeper hole tapers more and
-    # reads tighter, biasing the one measurement the whole design hangs on.
-    pitch, t = 9.0, P.PIN_HEAD_BORE_L + 2.5   # pitch fits a 3-digit label
-    w, d = n * pitch + 5.0, 14.0
-    part = extrude(rrect((-w / 2, w / 2), (-d / 2, d / 2), 2.0), amount=t)
+    pitch = 9.0                            # fits a 3-digit label
+    t = P.PIN_HEAD_BORE_L + P.PIN_BORE_L + 2.0
+    w, row, tab = n * pitch + 5.0, 15.0, 16.0
+    part = extrude(rrect((-w / 2 - tab, w / 2), (-row, row), 2.0), amount=t)
+    for y, word in ((row - 5.0, "HEAD"), (-row + 5.0, "BODY")):
+        part -= Pos(-w / 2 - tab / 2, y, t) * extrude(
+            Text(word, font_size=3.4, align=(Align.CENTER, Align.CENTER)),
+            amount=-0.6)
     for i, dia in enumerate(P.GAUGE_BORES):
         x = (i - (n - 1) / 2) * pitch
-        part -= Pos(x, 3.0, t) * extrude(
-            Circle(dia / 2 + P.PIN_MOUTH_CHAMFER),
-            amount=-P.PIN_MOUTH_CHAMFER, taper=45)
-        part -= Pos(x, 3.0, t - P.PIN_HEAD_BORE_L) * extrude(
-            Circle(dia / 2), amount=P.PIN_HEAD_BORE_L + 0.01)
+        for y, depth in ((row - 5.0, P.PIN_HEAD_BORE_L),
+                         (-row + 5.0, P.PIN_BORE_L)):
+            part -= Pos(x, y, t) * extrude(
+                Circle(dia / 2 + P.PIN_MOUTH_CHAMFER),
+                amount=-P.PIN_MOUTH_CHAMFER, taper=45)
+            part -= Pos(x, y, t - depth) * extrude(Circle(dia / 2),
+                                                   amount=depth + 0.01)
+            part -= Pos(x, y, -0.1) * extrude(
+                Circle(P.GAUGE_EJECT_D / 2), amount=t - depth + 0.1)
         # label in hundredths of a mm, matching GAUGE_BORES
-        part -= Pos(x, -4.0, t - 0.6) * extrude(
+        part -= Pos(x, 0.0, t - 0.6) * extrude(
             Text(f"{round(dia * 100)}", font_size=4.0,
                  align=(Align.CENTER, Align.CENTER)), amount=0.7)
     return part
 
 
-# ------------------------------------------- hardware, for renders only -----
 def build_probes():
     """The seven receptacles and the probe tips standing in them. Not a printed
     part -- it exists so the renders show where the solder joints actually are."""
