@@ -175,8 +175,8 @@ def main():
     # variable. This is what the old geometry did.
     # printed(), not a single constant: the counterbore and the body bore
     # are different diameters and shrink by different amounts.
-    body_printed = P.printed(P.PIN_BODY_BORE_D)
-    head_printed = P.printed(P.PIN_BORE_D)
+    body_printed = P.printed(P.PIN_BODY_BORE_D, P.PIN_BORE_L)
+    head_printed = P.printed(P.PIN_BORE_D, P.PIN_HEAD_BORE_L)
     check("head cannot enter the body bore -> the sleeve bottoms flush",
           body_printed < P.RECEPT_HEAD_D - 0.02,
           f"body bore prints Ø{body_printed:.3f} against a Ø{P.RECEPT_HEAD_D} head "
@@ -230,6 +230,32 @@ def main():
               + ("" if sound >= P.PIN_HEAD_BORE_L - 1e-9 else
                  f" over the top {P.PIN_HEAD_BORE_L - sound:.2f} mm, "
                  f"{sound:.2f} mm of sound collar below it"))
+
+    # ---------------------------------------------------------- root flares --
+    print("\nroot flares")
+    for nm, root_d, mate_d, mate in (
+            ("guide post", P.POST_D + 2 * P.POST_FLARE, P.SPRING_OD - 2 * P.SPRING_WIRE_D,
+             "the spring's own bore"),
+            ("board locator", P.LOCATOR_SHANK_D + 2 * P.LOCATOR_FLARE,
+             P.LOCATOR_NEST_HOLE_D - P.PRINT_HOLE_SHRINK, "the nest's pass-through"),
+            ("probe collar", 2 * (P.PROBE_ISLAND_R + P.ISLAND_FLARE),
+             P.PROBE_CLEAR_D - P.PRINT_HOLE_SHRINK, "the nest's probe window")):
+        printed_root = root_d + P.PRINT_BOSS_GROW
+        gap = (mate_d - printed_root) / 2
+        check(f"{nm:14s} flare clears {mate}", gap >= 0.08,
+              f"root prints Ø{printed_root:.2f} in Ø{mate_d:.2f} -> {gap:.3f} mm radial")
+    bare = P.LOCATOR_SHANK_D + P.PRINT_BOSS_GROW
+    flared = P.LOCATOR_SHANK_D + 2 * P.LOCATOR_FLARE + P.PRINT_BOSS_GROW
+    check("the flare is worth having on the tallest pin",
+          (flared / bare) ** 3 >= 1.3,
+          f"section modulus at the root x{(flared / bare) ** 3:.2f} "
+          f"(Ø{bare:.2f} -> Ø{flared:.2f} over {P.ROOT_FLARE_H:.1f} mm)")
+    check("registration pins are stout enough to go without one",
+          P.REG_PIN_TOP_Z / P.REG_PIN_D <= 2.0,
+          f"{P.REG_PIN_TOP_Z / P.REG_PIN_D:.1f}:1, against "
+          f"{(P.LOCATOR_TOP_Z - P.NEST_T) / P.LOCATOR_D:.1f}:1 on the locator tip "
+          f"-- and the nest leaves them "
+          f"{(P.REG_HOLE_D - P.PRINT_HOLE_SHRINK - P.REG_PIN_D - P.PRINT_BOSS_GROW) / 2:.3f} mm")
 
     # ------------------------------------------- interference, clamp closed --
     print("\ninterference, clamp closed (nest on the hard stop)")
@@ -508,16 +534,29 @@ def main():
           f"{room:.0f} mm of clearance")
     check("sleeve tail clears the bench", below < P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM,
           f"{below:.2f} mm vs {P.PLATE_Z_BOTTOM - P.STAND_Z_BOTTOM:.0f} mm")
-    for d, sh in P.HOLE_SHRINK_CAL:
-        check(f"print model reproduces its Ø{d:.2f} calibration point",
-              abs(P.hole_shrink(d) - sh) < 1e-9,
-              f"shrink {P.hole_shrink(d):.3f} -> prints Ø{P.printed(d):.3f}")
+    for d, dep, sh in P.HOLE_SHRINK_CAL:
+        check(f"print model reproduces Ø{d:.2f} at {dep:.1f} mm deep",
+              abs(P.hole_shrink(d, dep) - sh) < 1e-9,
+              f"shrink {P.hole_shrink(d, dep):.3f} -> prints "
+              f"Ø{P.printed(d, dep):.3f}")
+    # The P50's two bores are the SAME modelled diameter and the step that
+    # stops the sleeve comes entirely from their depths. That is measured on
+    # this printer -- both gauge rows read 135 and gave Ø0.98 and Ø0.90 -- but
+    # it is a dependency worth naming, because a printer without the depth
+    # effect would have no step at all.
+    step = (P.printed(P.PIN_BORE_D, P.PIN_HEAD_BORE_L)
+            - P.printed(P.PIN_BODY_BORE_D, P.PIN_BORE_L))
+    modelled = P.PIN_BORE_D - P.PIN_BODY_BORE_D
+    check("the depth stop survives as printed", step >= 0.06,
+          f"{step:.3f} mm of step, of which {modelled:.3f} mm is modelled "
+          f"diameter and {step - modelled:.3f} mm is the two bores' depths")
     # Outside the calibrated span the model holds the nearest measurement flat,
     # which is a guess. How far outside is the thing to bound: shrink rises as
     # diameter falls, so a bore below the smallest calibration point prints
     # TIGHTER than modelled, and on a press fit that is the direction that
     # seizes.
-    c_lo, c_hi = P.HOLE_SHRINK_CAL[0][0], P.HOLE_SHRINK_CAL[-1][0]
+    ds = [d for d, _, _ in P.HOLE_SHRINK_CAL]
+    c_lo, c_hi = min(ds), max(ds)
     out = max(c_lo - P.PIN_BODY_BORE_D, P.PIN_BORE_D - c_hi, 0.0)
     check("probe bores sit inside the calibrated range, or barely outside it",
           out <= 0.20,
@@ -545,8 +584,10 @@ def main():
     pin_clear = (2.2 - pin_printed) / 2
     # derived from the actual body-bore fit, not a hard-coded 0.04 -- the chain
     # used to be insensitive to the parameter it most depends on
-    sleeve_play = (P.printed(P.PIN_BODY_BORE_D) - P.RECEPT_BODY_D) / 2
-    head_play = max(0.0, (P.printed(P.PIN_BORE_D) - P.RECEPT_HEAD_D) / 2)
+    sleeve_play = (P.printed(P.PIN_BODY_BORE_D, P.PIN_BORE_L)
+                   - P.RECEPT_BODY_D) / 2
+    head_play = max(0.0, (P.printed(P.PIN_BORE_D, P.PIN_HEAD_BORE_L)
+                          - P.RECEPT_HEAD_D) / 2)
     bearing_sep = (P.PIN_HEAD_BORE_L + P.PIN_BORE_L) / 2
     arm = max(math.hypot(t["x"], t["y"]) for t in G.TEST_POINTS)
     span = math.dist(G.HOLES[P.LOCATOR_PRIMARY[0]], G.HOLES[P.LOCATOR_PRIMARY[1]])
@@ -651,7 +692,7 @@ def main():
     # up again as the hole grows, and it cannot go below zero, so [0, that] is
     # the honest bracket. Using the Ø1.35 figure of 0.40 up here would have
     # been nonsense -- it is a measure of how badly a 2-nozzle-wide hole closes.
-    sh_hi = P.hole_shrink(P.INSERT_M3_HOLE_D)
+    sh_hi = P.hole_shrink(P.INSERT_M3_HOLE_D, P.INSERT_M3_HOLE_DEPTH)
     lo_p = P.INSERT_M3_HOLE_D - sh_hi
     hi_p = P.INSERT_M3_HOLE_D
     check("insert hole PRINTS between the tip and the knurl",

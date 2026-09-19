@@ -25,6 +25,13 @@ if P.PIN_FAMILY != "P50":
     OUT = os.path.join(OUT, P.PIN_FAMILY.lower())
 
 
+def flare(face, radial, height):
+    """A tapered skirt that spreads a pin's root into the face it stands on."""
+    import math as _m
+    return extrude(face, amount=height,
+                   taper=_m.degrees(_m.atan(radial / height)))
+
+
 def rrect(xr, yr, r, z=0.0):
     """A filleted rectangle face at height z."""
     w, h = xr[1] - xr[0], yr[1] - yr[0]
@@ -47,6 +54,13 @@ def build_base_plate():
     # the relief cutting below is needed.
     if P.Z_PIN_TOP > 0:
         platform = extrude(G.sk(G.probe_islands()), amount=P.Z_PIN_TOP)
+        # per island, not on the unioned region: extruding a Compound of faces
+        # with a taper drove the solid DOWNWARD into the plate, where it was
+        # invisible and did nothing
+        for tp in G.TEST_POINTS:
+            platform += Pos(tp["x"], tp["y"]) * flare(
+                Circle(P.PROBE_ISLAND_R + P.ISLAND_FLARE),
+                P.ISLAND_FLARE, P.ROOT_FLARE_H)
         for fp, zfloor in G.bottom_part_sweep():
             cut = fp
             if zfloor + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
@@ -67,6 +81,8 @@ def build_base_plate():
             Circle(P.SPRING_POCKET_D / 2), amount=P.BASE_SPRING_DEPTH)
         post = Pos(x, y, -P.BASE_SPRING_DEPTH) * extrude(
             Circle(P.POST_D / 2), amount=P.POST_TOP_Z + P.BASE_SPRING_DEPTH)
+        post += Pos(x, y, -P.BASE_SPRING_DEPTH) * flare(
+            Circle(P.POST_D / 2 + P.POST_FLARE), P.POST_FLARE, P.ROOT_FLARE_H)
         part += post
 
     # Probe bores, printed to final size. A short lead-in, then a long bore --
@@ -93,6 +109,11 @@ def build_base_plate():
         body_top = top - P.PIN_HEAD_BORE_L
         part -= p * Pos(0, 0, body_top - P.PIN_BORE_L) * extrude(
             Circle(P.PIN_BODY_BORE_D / 2), amount=P.PIN_BORE_L)
+        # cone from the counterbore into the body bore. With only a few
+        # hundredths of step between them the sleeve has nothing to catch on
+        # squarely, but a tube this thin buckles the moment it does.
+        part -= p * Pos(0, 0, body_top) * extrude(
+            Circle(P.PIN_BORE_D / 2), amount=-P.PIN_LEAD_IN, taper=45)
         clr_top = body_top - P.PIN_BORE_L
         part -= p * Pos(0, 0, z0 - 0.1) * extrude(
             Circle(P.PIN_CLEAR_D / 2), amount=clr_top - z0 + 0.1)
@@ -116,6 +137,8 @@ def build_base_plate():
     for name in P.LOCATOR_PRIMARY:
         x, y = G.HOLES[name]
         part += Pos(x, y) * extrude(Circle(P.LOCATOR_SHANK_D / 2), amount=P.NEST_T)
+        part += Pos(x, y) * flare(Circle(P.LOCATOR_SHANK_D / 2 + P.LOCATOR_FLARE),
+                                  P.LOCATOR_FLARE, P.ROOT_FLARE_H)
         part += Pos(x, y, P.NEST_T) * extrude(
             Circle(P.LOCATOR_D / 2), amount=P.LOCATOR_TOP_Z - P.NEST_T - 0.6)
         part += Pos(x, y, P.LOCATOR_TOP_Z - 0.6) * extrude(

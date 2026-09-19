@@ -34,58 +34,67 @@ PART_H_TOP_MAIN      = 1.285   # tallest top-side part on the main rigid section
 #
 # Recalibrate BOTH together: PIN_BORE_D is what the gauge measures, and
 # PRINT_HOLE_SHRINK is PIN_BORE_D minus the sleeve head it just accepts.
-# ONE of the two calibration points turned out to be worthless, and the way it
-# failed is worth keeping:
+# Shrink is a function of DIAMETER and DEPTH, and the P50 gauge measured both
+# because its two rows are the same diameters at different depths:
 #
-#   Ø2.00 accepted a Ø1.90 R100 head  ->  shrink 0.10   MEASURED, right part
-#   Ø1.20 accepted a P50 PROBE        ->  withdrawn
+#   (Ø1.35, 2.5 mm deep)  took a Ø0.98 R50 head, 1.30 not quite  -> 0.37
+#   (Ø1.35, 8.0 mm deep)  took a Ø0.86 R50 body with a little     -> 0.45
+#                         play, 1.30 not at all
+#   (Ø2.00, 7.5 mm deep)  took a Ø1.90 R100 head                  -> 0.10
 #
-# The P50 gauge was read with the probe in hand rather than the receptacle. The
-# probe's barrel is Ø0.68; the receptacle's head is Ø0.98. So "the smallest
-# bore it entered was 1.20" was answering a different question, and the 0.22
-# shrink it implied was 0.30 mm out. On the bench the R50 sleeve then would not
-# enter the gauge's TOP slot either, which is the one hard fact left:
+# The first two differ only in depth: 5.5 mm deeper costs 0.08 mm. That is the
+# whole depth term, and it rests on that one pair -- but ignoring it is what
+# put an INTERFERENCE fit 8 mm long on a 0.86 mm brass tube and buckled the
+# receptacles going into the last plate.
 #
-#   printed(1.20) < 0.98  ->  shrink at Ø1.20 > 0.22
-#   printed(1.35) < 0.98  ->  shrink at Ø1.35 > 0.37
-#
-# 0.40 at Ø1.35 is an ESTIMATE sitting just above that bound, not a
-# measurement, and it is what the new P50 gauge exists to replace. It puts the
-# counterbore at Ø1.37; across the whole plausible range of shrink (0.37 to
-# 0.50 at Ø1.35) the answer only moves between Ø1.35 and Ø1.43, which is why
-# the gauge can bracket it in ten slots.
-#
-# Small holes losing this much is not exotic: a Ø1 hole is two and a half
-# nozzle widths across, and the perimeter is laid on the inside of the curve.
-HOLE_SHRINK_CAL      = [(1.35, 0.40), (2.00, 0.10)]
+# An earlier reading of Ø1.20 is withdrawn: it was taken with the probe in hand
+# rather than the receptacle, and the probe's barrel is Ø0.68 against the
+# receptacle's Ø0.98 head, so it answered a different question by 0.30 mm.
+HOLE_SHRINK_CAL      = [(1.35, 2.5, 0.37),
+                        (1.35, 8.0, 0.45),
+                        (2.00, 7.5, 0.10)]
+HOLE_SHRINK_REF_D    = 2.5     # depth the diameter curve is stated at
+HOLE_SHRINK_PER_MM   = (0.45 - 0.37) / (8.0 - 2.5)
 
-def hole_shrink(d):
-    """How far under nominal a modelled hole of diameter `d` comes out.
 
-    Linear between the calibration points, HELD FLAT outside them. Two points
-    cannot support an extrapolation: a straight line through these two crosses
-    zero at Ø2.7 and goes negative, which no printer does.
+def _shrink_vs_d():
+    """Calibration points reduced to the reference depth, deduplicated."""
+    out = {}
+    for d, depth, sh in HOLE_SHRINK_CAL:
+        out.setdefault(d, sh - HOLE_SHRINK_PER_MM * (depth - HOLE_SHRINK_REF_D))
+    return sorted(out.items())
+
+
+def hole_shrink(d, depth=HOLE_SHRINK_REF_D):
+    """How far under nominal a modelled hole of diameter `d` and depth `depth`
+    comes out.
+
+    Linear in diameter between the calibration points and HELD FLAT outside
+    them -- two points cannot support an extrapolation -- plus a linear depth
+    term. Never negative.
     """
-    if d <= HOLE_SHRINK_CAL[0][0]:
-        return HOLE_SHRINK_CAL[0][1]
-    if d >= HOLE_SHRINK_CAL[-1][0]:
-        return HOLE_SHRINK_CAL[-1][1]
-    for (d0, s0), (d1, s1) in zip(HOLE_SHRINK_CAL, HOLE_SHRINK_CAL[1:]):
-        if d0 <= d <= d1:
-            return s0 + (s1 - s0) * (d - d0) / (d1 - d0)
+    pts = _shrink_vs_d()
+    if d <= pts[0][0]:
+        base = pts[0][1]
+    elif d >= pts[-1][0]:
+        base = pts[-1][1]
+    else:
+        base = next(s0 + (s1 - s0) * (d - d0) / (d1 - d0)
+                    for (d0, s0), (d1, s1) in zip(pts, pts[1:]) if d0 <= d <= d1)
+    return max(0.0, base + HOLE_SHRINK_PER_MM * (depth - HOLE_SHRINK_REF_D))
 
 
-def printed(d):
-    """What a modelled hole of diameter `d` actually comes out at."""
-    return d - hole_shrink(d)
+def printed(d, depth=HOLE_SHRINK_REF_D):
+    """What a modelled hole of diameter `d`, bored `depth` deep, comes out at."""
+    return d - hole_shrink(d, depth)
 
 
-def hole_bore(target):
-    """Modelled hole diameter that PRINTS at `target`. The inverse of printed()."""
-    lo, hi = target, target + 1.0
+def hole_bore(target, depth=HOLE_SHRINK_REF_D):
+    """Modelled hole diameter that PRINTS at `target` when bored `depth` deep."""
+    lo, hi = target, target + 1.5
     for _ in range(48):
         mid = (lo + hi) / 2
-        if printed(mid) < target:
+        if printed(mid, depth) < target:
             lo = mid
         else:
             hi = mid
@@ -150,12 +159,8 @@ if PIN_FAMILY == "P50":
     RECEPT_BODY_D    = 0.86    # sleeve body diameter
     RECEPT_HEAD_D    = 0.98    # sleeve head diameter
     RECEPT_HEAD_L    = 2.5     # head length
-    # BEST GUESS, not a measurement -- the old 1.20 was read with the probe in
-    # hand instead of the receptacle. hole_bore(0.98) says 1.371; this rounds
-    # UP, because the failure the bench hit was a bore too SMALL to seat the
-    # sleeve at all, while one slightly large still seats and is still held by
-    # the body bore below it. Replace it with what the new gauge reads.
-    PIN_BORE_D       = 1.40
+    PIN_BORE_L       = 8.0     # body guidance below the head; this is what
+                               # actually limits sleeve tilt
     PIN_BORE_L       = 8.0     # body guidance below the head
     PIN_CLEAR_D      = 2.20    # loose clearance below the bore
     # Starts one slot BELOW the old range's top, which the sleeve would not
@@ -185,8 +190,7 @@ else:
     # the P50 number was calibrated to. It lands the body bore at Ø1.71, which
     # is the vendor's own stated drilling size of 1.70 mm -- an independent
     # confirmation that the print model transfers to this size.
-    PIN_BORE_D       = 2.00    # MEASURED on the P100 fit gauge: the R100 head
-                               # entered the 200 bore and nothing smaller
+
     PIN_BORE_L       = 5.0     # with the 7.5 mm head above it, two bearing
                                # zones 6.25 mm apart -- and tilt over a probe
                                # that stands 8.35 mm proud is what the pad
@@ -218,17 +222,26 @@ else:
 # head cannot enter the body bore, so it bottoms with its top flush with the
 # seat, by construction.
 PIN_HEAD_BORE_L      = RECEPT_HEAD_L
-# SOLVED, not offset from PIN_BORE_D. Head and body bores are different
-# diameters and so shrink by different amounts; subtracting the step between
-# the sleeve's two diameters only worked while shrink was assumed constant.
-PIN_BODY_BORE_D      = hole_bore(RECEPT_BODY_D + 0.04)
+# BOTH bores solved at their OWN depth. The counterbore is one head deep and
+# the body bore is PIN_BORE_L deep, and at P50 sizes that depth difference is
+# worth 0.08 mm of printed diameter -- more than the 0.06 mm step between the
+# sleeve's own two diameters. Offsetting one from the other, as this did, is
+# what put an interference fit on the body and buckled the receptacles.
+#
+# On the P50 both land on Ø1.35 modelled and print Ø0.98 and Ø0.90, which is
+# exactly what the gauge's two rows read. The step that stops the head is
+# therefore produced by DEPTH on this printer, not by modelled diameter; the
+# check "head cannot enter the body bore" measures it as printed.
+PIN_BODY_BORE_D      = hole_bore(RECEPT_BODY_D + 0.04, PIN_BORE_L)
+PIN_BORE_D           = hole_bore(RECEPT_HEAD_D, PIN_HEAD_BORE_L)
+PIN_LEAD_IN          = 0.40    # cone from the counterbore into the body bore
 PIN_MOUTH_CHAMFER    = 0.15    # replaces the old oversized lead-in. Small: on
                                # the two crowded bores it is the widest feature
                                # and so sets the thinnest wall.
 # Only used when the seat is BELOW the plateau (the P100 family): a short
 # relief from the plateau down to the seat, wide enough to pass the head so the
 # receptacle can still be pulled out upwards.
-PIN_RELIEF_D         = hole_bore(RECEPT_HEAD_D + 0.5)
+PIN_RELIEF_D         = hole_bore(RECEPT_HEAD_D + 0.5, 1.0)
 # A press fit in a blind hole has no way out. Every gauge bore gets an eject
 # hole through the back, so a sleeve that goes in can be pushed out with a
 # paperclip and the coupon survives to be read again.
@@ -267,6 +280,19 @@ POST_D               = 5.00    # guide post diameter
 # posts now only guide and carry the springs; REG_* below does the locating.
 POST_HOLE_D          = 5.80    # ~0.50 mm diametral as printed, 0.25 radial
 POST_TOP_Z           = 16.00   # post top, tall enough to guide the cover
+# Root flares. A pin standing on a flat face meets it in a square corner, which
+# is where a printed column breaks -- the layer bond there carries the whole
+# bending moment with no material to spread it into. Each of these is as large
+# as its own mating clearance allows AS PRINTED, which is what limits them:
+#   post     the spring's Ø5.80 bore slides down over it
+#   locator  the nest's Ø3.40 pass-through
+#   island   the nest's Ø4.00 probe window
+# The registration pins get none: the nest's Ø4.45 hole leaves 0.075 mm, and
+# they are Ø4.00 x 6.5 mm -- 1.6:1, the stoutest thing standing on the plate.
+ROOT_FLARE_H         = 1.50    # height every flare rises over
+POST_FLARE           = 0.25    # radial, at the spring-pocket floor
+LOCATOR_FLARE        = 0.20    # radial, on the Ø2.50 shank
+ISLAND_FLARE         = 0.25    # radial, around each probe collar
 POST_XY              = [(-38.0, 8.5), (-38.0, -8.5),
                         ( 24.0, 8.5), ( 24.0, -8.5)]
 

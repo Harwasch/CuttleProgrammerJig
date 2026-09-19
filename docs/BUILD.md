@@ -132,6 +132,14 @@ no sleeve would seat.
    `(PIN_BORE_D, PIN_BORE_D − your head diameter)` to `HOLE_SHRINK_CAL`, and
    run `python3 jig.py`.
 
+### Getting the receptacles in
+
+They go in tail first, and a 0.86 mm brass tube buckles easily, so do not pinch
+the tube — push on the head with something flat. The bore is a 0.020 mm radial
+slip over 8 mm, which is a firm push, not a fight; if it fights you, the bore
+is undersize and the gauge is telling you so. A cone leads from the counterbore
+into the body bore so the tube cannot catch square on the step.
+
 ### If the P50 bores will not come out
 
 At Ø0.98 a printed hole is two and a half nozzle widths across and the printer
@@ -147,53 +155,71 @@ the fit stops depending on the print model at all.
 The P100 family does not have this problem — Ø1.90 and Ø1.71 are comfortable
 for FDM — which is worth knowing if you have both sets of pins.
 
-### Hole shrink is not one number
+### Hole shrink is a function of diameter AND depth
 
-This was modelled as a single constant, and two gauges settled it:
+The P50 gauge's two rows are the same diameters at different depths, so it
+measured both at once:
 
-| gauge | modelled bore | part that just entered | shrink |
+| bore | depth | part that just entered | shrink |
 |---|---|---|---|
-| P100 | Ø2.00 | Ø1.90 R100 head | **0.10** |
-| P50 | Ø1.20 | Ø0.68 P50 **probe** | *withdrawn — wrong part* |
+| Ø1.35 | 2.5 mm | Ø0.98 R50 **head** (1.30 not quite) | **0.37** |
+| Ø1.35 | 8.0 mm | Ø0.86 R50 **body**, a little play (1.30 not at all) | **0.45** |
+| Ø2.00 | 7.5 mm | Ø1.90 R100 head | **0.10** |
 
-The P50 reading was taken with the probe rather than the receptacle, so the
-0.22 it implied was answering a different question. What survives from that
-bench session is a bound rather than a value: the R50 sleeve would not enter
-the old gauge's **top** slot either, so
+The first two differ only in depth: **5.5 mm deeper costs 0.08 mm of printed
+diameter**. Ignoring that is what buckled a batch of receptacles — the body
+bore was offset from the counterbore on the assumption that both shrank the
+same, which put an *interference* fit 8 mm long on a 0.86 mm brass tube.
 
-```
-printed(1.20) < 0.98   ->   shrink at Ø1.20 > 0.22
-printed(1.35) < 0.98   ->   shrink at Ø1.35 > 0.37
-```
+Both bores are now solved at their own depth. On the P50 they land on the same
+**Ø1.35 modelled** and print **Ø0.98** and **Ø0.90** — exactly what the two
+gauge rows read. So on this printer **the step that stops the sleeve is
+produced by depth, not by modelled diameter**, and `verify.py` measures it as
+printed rather than assuming it. That is a real dependency: a printer without
+the depth effect would have no step at all, and `PIN_BORE_D` would have to be
+opened up to create one.
 
-`HOLE_SHRINK_CAL` therefore carries one measurement, `(2.00, 0.10)`, and one
-**estimate**, `(1.35, 0.40)`, sitting just above that bound. `hole_shrink(d)`
-interpolates between them and holds the nearer value flat outside — two points
-cannot support an extrapolation. Shrink halving between Ø1.35 and Ø2.00 is the
-shape you would expect: a small hole loses more, because the perimeter is laid
-on the inside of a tight curve.
+An earlier Ø1.20 reading is withdrawn — it was taken with the probe in hand
+rather than the receptacle, and the probe's barrel is Ø0.68 against the
+receptacle's Ø0.98 head, so it answered a different question by 0.30 mm.
 
-The estimate is what the new P50 gauge exists to replace. It is not a wild one
-— across the whole plausible range, shrink from 0.37 to 0.50 at Ø1.35, the
-counterbore only moves between Ø1.35 and Ø1.43 — but it is a guess, and the
-P50 plate shipped with `PIN_BORE_D = 1.40` is a guess with it. It rounds **up**
-from the model's Ø1.371 deliberately: the failure the bench hit was a bore too
-small to seat the sleeve at all, while one slightly large still seats and is
-still held by the 8 mm body bore below it.
-
-**Nothing has been measured at Ø4 and up**, which is where the guide posts, the
-registration pins, the insert holes and the magnet fixture's rotor journal
-live. Those use `PRINT_HOLE_SHRINK`, which is a separate constant at 0.22 —
-deliberately not tied to the calibration list, because every one of those
-features has been printed at that figure and works. Shrink cannot rise again as
-the hole grows, so the honest bracket up there is 0 to 0.10 and `verify.py`
-checks across it.
+The depth term rests on that one pair of rows. **Nothing has been measured at
+Ø4 and up**, which is where the guide posts, the registration pins, the insert
+holes and the magnet fixture's rotor journal live. Those use
+`PRINT_HOLE_SHRINK`, a separate constant at 0.22, deliberately not tied to the
+calibration list — every one of those features has been printed at that figure
+and works, and a 40 % small-hole loss has no business up there. Shrink cannot
+rise again as the hole grows, so the honest bracket is 0 to 0.10 and
+`verify.py` checks across it.
 
 To close that, print **`shrink_gauge`** (56 × 32 × 5 mm, about 15 minutes):
 four plain through holes modelled at Ø4, Ø6, Ø9 and Ø12 with the number
 engraved beside each. Run the caliper's inside jaws down each one; shrink at
 that diameter is the engraved number minus what you read. Add the points to
 `HOLE_SHRINK_CAL` and everything downstream re-derives.
+
+### Root flares
+
+A pin standing on a flat face meets it in a square corner, and that corner is
+where a printed column breaks: the layer bond carries the whole bending moment
+with nothing to spread it into. Every pin that has room now rises out of a
+1.5 mm tapered skirt, sized to the largest its own mating clearance allows as
+printed:
+
+| pin | root | limited by | clearance left |
+|---|---|---|---|
+| guide post | Ø5.08 → Ø5.58 | the spring's Ø5.80 bore sliding over it | 0.11 mm |
+| board locator | Ø2.58 → Ø2.98 | the nest's Ø3.40 pass-through | 0.10 mm |
+| probe collar | Ø3.08 → Ø3.58 | the nest's Ø4.00 probe window | 0.10 mm |
+
+On the locator — the tallest thing on the plate — that is **1.54× the section
+modulus** at the root. The registration pins get none: the nest leaves them
+0.075 mm, and at Ø4.00 × 6.5 mm they are 1.6:1, the stoutest thing standing
+there. Giving them one would mean relieving the nest's underside and
+reprinting it.
+
+**The nest does not change.** All three flares fit inside clearances that
+already existed.
 
 ### The bore is stepped, and that is what sets the probe height
 
@@ -252,9 +278,10 @@ loom live.
 | working stroke | 1.20 of 2.65 mm | 1.60 of 3.50 mm |
 | clamp load, closed | 10.0 N | 15.0 N |
 | counterbore | Ø0.98 × 2.5 mm | Ø1.90 × 7.5 mm |
+| body bore, as modelled | Ø1.35 | Ø1.85 |
 | body bore, as printed | Ø0.90 × 8.0 mm | Ø1.71 × 5.0 mm |
-| counterbore, as modelled | Ø1.40 (a guess) | Ø2.00 (measured) |
-| hole shrink at the counterbore | ~0.38 mm, estimated | 0.10 mm, measured |
+| counterbore, as modelled | Ø1.35 | Ø2.00 |
+| hole shrink, counterbore / body bore | 0.37 / 0.45 mm | 0.10 / 0.13 mm |
 | fit gauge range | 1.30–1.75 | 1.80–2.25 |
 | base plate | 8 mm thick | 14 mm thick |
 | outline | 145 × 91 mm | 145 × 101 mm |
