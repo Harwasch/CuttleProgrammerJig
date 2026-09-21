@@ -21,6 +21,15 @@ import params as P
 import geom as G
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+if P.PIN_FAMILY != "P50":
+    OUT = os.path.join(OUT, P.PIN_FAMILY.lower())
+
+
+def flare(face, radial, height):
+    """A tapered skirt that spreads a pin's root into the face it stands on."""
+    import math as _m
+    return extrude(face, amount=height,
+                   taper=_m.degrees(_m.atan(radial / height)))
 
 
 def rrect(xr, yr, r, z=0.0):
@@ -36,19 +45,35 @@ def build_base_plate():
     z0 = P.PLATE_Z_BOTTOM
     part = extrude(rrect(P.PLATE_X, P.PLATE_Y, P.PLATE_FILLET, z0), amount=-z0)
 
-    # raised probe platform, then cut it back under every bottom-side part
-    platform = extrude(G.sk(G.probe_islands()), amount=P.Z_PIN_TOP)
-    for fp, zfloor in G.bottom_part_sweep():
-        cut = fp
-        if zfloor + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
-            # This part's underside clears the platform top, so it passes over
-            # the islands and they can keep their full collar. Cutting them
-            # anyway left 0.15 mm of wall on two bores and breached a third.
-            cut = fp.difference(G.probe_islands())
-        if cut.is_empty:
-            continue
-        platform -= extrude(G.sk(cut, Plane.XY.offset(zfloor)), amount=P.Z_PIN_TOP + 1)
-    part += platform
+    # The probe seat. Where it lands relative to the hard-stop plateau is set by
+    # the pin family, not by choice: seat = NEST_T + COMPRESSION - PROTRUSION.
+    # A P50 stands 3.35 mm out of its receptacle and wants the seat 3.85 mm UP,
+    # so the plate grows a platform. A P100 stands 8.35 mm out and wants it
+    # 0.75 mm DOWN, so the plate gets a relief instead and the plateau stays
+    # whole -- which also means no bottom-side part can reach it, and none of
+    # the relief cutting below is needed.
+    if P.Z_PIN_TOP > 0:
+        platform = extrude(G.sk(G.probe_islands()), amount=P.Z_PIN_TOP)
+        # per island, not on the unioned region: extruding a Compound of faces
+        # with a taper drove the solid DOWNWARD into the plate, where it was
+        # invisible and did nothing
+        for tp in G.TEST_POINTS:
+            platform += Pos(tp["x"], tp["y"]) * flare(
+                Circle(P.PROBE_ISLAND_R + P.ISLAND_FLARE),
+                P.ISLAND_FLARE, P.ROOT_FLARE_H)
+        for fp, zfloor in G.bottom_part_sweep():
+            cut = fp
+            if zfloor + P.PART_CLEAR_Z >= P.Z_PIN_TOP:
+                # This part's underside clears the platform top, so it passes
+                # over the islands and they can keep their full collar. Cutting
+                # them anyway left 0.15 mm of wall on two bores and breached a
+                # third.
+                cut = fp.difference(G.probe_islands())
+            if cut.is_empty:
+                continue
+            platform -= extrude(G.sk(cut, Plane.XY.offset(zfloor)),
+                                amount=P.Z_PIN_TOP + 1)
+        part += platform
 
     # guide posts, rising from the floor of their own spring pockets
     for x, y in P.POST_XY:
@@ -56,6 +81,8 @@ def build_base_plate():
             Circle(P.SPRING_POCKET_D / 2), amount=P.BASE_SPRING_DEPTH)
         post = Pos(x, y, -P.BASE_SPRING_DEPTH) * extrude(
             Circle(P.POST_D / 2), amount=P.POST_TOP_Z + P.BASE_SPRING_DEPTH)
+        post += Pos(x, y, -P.BASE_SPRING_DEPTH) * flare(
+            Circle(P.POST_D / 2 + P.POST_FLARE), P.POST_FLARE, P.ROOT_FLARE_H)
         part += post
 
     # Probe bores, printed to final size. A short lead-in, then a long bore --
@@ -68,6 +95,12 @@ def build_base_plate():
         # sized for the BODY. The head cannot enter the body bore, so it bottoms
         # flush with the platform instead of stopping wherever you stopped
         # pushing.
+        if top < 0:
+            # Seat below the plateau: sink a relief from the plateau down to
+            # it, wide enough to pass the head so the receptacle can still be
+            # pulled out upwards.
+            part -= p * Pos(0, 0, top) * extrude(
+                Circle(P.bore(P.PIN_RELIEF_D) / 2), amount=-top)
         part -= p * Pos(0, 0, top) * extrude(
             Circle(P.PIN_BORE_D / 2 + P.PIN_MOUTH_CHAMFER),
             amount=-P.PIN_MOUTH_CHAMFER, taper=45)
@@ -76,6 +109,11 @@ def build_base_plate():
         body_top = top - P.PIN_HEAD_BORE_L
         part -= p * Pos(0, 0, body_top - P.PIN_BORE_L) * extrude(
             Circle(P.PIN_BODY_BORE_D / 2), amount=P.PIN_BORE_L)
+        # cone from the counterbore into the body bore. With only a few
+        # hundredths of step between them the sleeve has nothing to catch on
+        # squarely, but a tube this thin buckles the moment it does.
+        part -= p * Pos(0, 0, body_top) * extrude(
+            Circle(P.PIN_BORE_D / 2), amount=-P.PIN_LEAD_IN, taper=45)
         clr_top = body_top - P.PIN_BORE_L
         part -= p * Pos(0, 0, z0 - 0.1) * extrude(
             Circle(P.PIN_CLEAR_D / 2), amount=clr_top - z0 + 0.1)
@@ -99,6 +137,8 @@ def build_base_plate():
     for name in P.LOCATOR_PRIMARY:
         x, y = G.HOLES[name]
         part += Pos(x, y) * extrude(Circle(P.LOCATOR_SHANK_D / 2), amount=P.NEST_T)
+        part += Pos(x, y) * flare(Circle(P.LOCATOR_SHANK_D / 2 + P.LOCATOR_FLARE),
+                                  P.LOCATOR_FLARE, P.ROOT_FLARE_H)
         part += Pos(x, y, P.NEST_T) * extrude(
             Circle(P.LOCATOR_D / 2), amount=P.LOCATOR_TOP_Z - P.NEST_T - 0.6)
         part += Pos(x, y, P.LOCATOR_TOP_Z - 0.6) * extrude(
@@ -320,12 +360,17 @@ def build_stand():
             cx = case_x + sx * (L + 2 * P.STLINK_CLEAR) / 2
             cy = P.STLINK_Y_CENTRE + sy * cw / 2
             rz = fz + P.STLINK_RIB_H / 2          # Box centres on its Pos
-            part += Pos(cx + sx * 1.5, cy, rz) * Box(3.0, 14.0, P.STLINK_RIB_H)
-            part += Pos(cx, cy + sy * 1.5, rz) * Box(14.0, 3.0, P.STLINK_RIB_H)
+            # Each leg runs INWARD from the corner. Centred on it, the 14 mm
+            # Y leg stuck 7 mm past the cavity and straight out through the
+            # -Y wall as soon as the P100 moved the case up against it.
+            part += Pos(cx + sx * 1.5, cy - sy * 7.0, rz) * \
+                Box(3.0, 14.0, P.STLINK_RIB_H)
+            part += Pos(cx - sx * 7.0, cy + sy * 1.5, rz) * \
+                Box(14.0, 3.0, P.STLINK_RIB_H)
 
     # USB cable, out through the +X wall at the case's own height
     ch = H + 2 * P.STLINK_CLEAR
-    part -= Pos(P.STAND_X[1], 0, P.STLINK_TOP_Z - ch / 2) * \
+    part -= Pos(P.STAND_X[1], P.STLINK_Y_CENTRE, P.STLINK_TOP_Z - ch / 2) * \
         Box(4 * W, P.STLINK_USB_W, P.STLINK_USB_H)
 
     # feed for the external 3.3 V supply, on the far side from the clamp
@@ -336,53 +381,102 @@ def build_stand():
 
 
 def build_fit_gauge():
-    """Calibration coupon: one row of bores stepping through GAUGE_BORES.
+    """Calibration coupon, tested with the RECEPTACLE -- not the probe.
 
-    Print it in the material and profile you will use for the base plate, find
-    the hole an R50 sleeve just pushes into, and put that number in
-    PIN_BORE_D. That replaces drilling the plate afterwards.
+    TWO rows, because the plate needs two different bores and at this size they
+    cannot be derived from one another: shrink changes fast enough here that
+    the counterbore and the body bore end up barely 0.05 mm apart as modelled.
+
+      top row, one head deep    push the sleeve in HEAD FIRST. The answer is
+                                the smallest bore whose head goes fully in with
+                                a firm thumb push -- the step down to the body
+                                ending flush with the face -- and does not
+                                rattle. That is PIN_BORE_D.
+      bottom row, body-bore deep  push the sleeve in TAIL FIRST. The answer is
+                                the smallest bore the body slides down without
+                                force. That is PIN_BODY_BORE_D.
+
+    Both rows run the same diameters, and every bore has an eject hole through
+    the back: a press fit in a blind hole otherwise stays there.
     """
     n = len(P.GAUGE_BORES)
-    # The coupon must reproduce the feature it calibrates: a BLIND counterbore
-    # exactly one head deep, with the same mouth chamfer. It used to be an
-    # 11 mm through hole for a 9 mm application -- a deeper hole tapers more and
-    # reads tighter, biasing the one measurement the whole design hangs on.
-    pitch, t = 9.0, P.PIN_HEAD_BORE_L + 2.5   # pitch fits a 3-digit label
-    w, d = n * pitch + 5.0, 14.0
-    part = extrude(rrect((-w / 2, w / 2), (-d / 2, d / 2), 2.0), amount=t)
+    pitch = 9.0                            # fits a 3-digit label
+    t = P.PIN_HEAD_BORE_L + P.PIN_BORE_L + 2.0
+    w, row, tab = n * pitch + 5.0, 15.0, 16.0
+    part = extrude(rrect((-w / 2 - tab, w / 2), (-row, row), 2.0), amount=t)
+    for y, word in ((row - 5.0, "HEAD"), (-row + 5.0, "BODY")):
+        part -= Pos(-w / 2 - tab / 2, y, t) * extrude(
+            Text(word, font_size=3.4, align=(Align.CENTER, Align.CENTER)),
+            amount=-0.6)
     for i, dia in enumerate(P.GAUGE_BORES):
         x = (i - (n - 1) / 2) * pitch
-        part -= Pos(x, 3.0, t) * extrude(
-            Circle(dia / 2 + P.PIN_MOUTH_CHAMFER),
-            amount=-P.PIN_MOUTH_CHAMFER, taper=45)
-        part -= Pos(x, 3.0, t - P.PIN_HEAD_BORE_L) * extrude(
-            Circle(dia / 2), amount=P.PIN_HEAD_BORE_L + 0.01)
+        for y, depth in ((row - 5.0, P.PIN_HEAD_BORE_L),
+                         (-row + 5.0, P.PIN_BORE_L)):
+            part -= Pos(x, y, t) * extrude(
+                Circle(dia / 2 + P.PIN_MOUTH_CHAMFER),
+                amount=-P.PIN_MOUTH_CHAMFER, taper=45)
+            part -= Pos(x, y, t - depth) * extrude(Circle(dia / 2),
+                                                   amount=depth + 0.01)
+            part -= Pos(x, y, -0.1) * extrude(
+                Circle(P.GAUGE_EJECT_D / 2), amount=t - depth + 0.1)
         # label in hundredths of a mm, matching GAUGE_BORES
-        part -= Pos(x, -4.0, t - 0.6) * extrude(
+        part -= Pos(x, 0.0, t - 0.6) * extrude(
             Text(f"{round(dia * 100)}", font_size=4.0,
                  align=(Align.CENTER, Align.CENTER)), amount=0.7)
     return part
 
 
-# ------------------------------------------- hardware, for renders only -----
 def build_probes():
-    """The seven R50 sleeves and the P50 tips standing in them. Not a printed
+    """The seven receptacles and the probe tips standing in them. Not a printed
     part -- it exists so the renders show where the solder joints actually are."""
     out = None
     for tp in G.TEST_POINTS:
         p = Pos(tp["x"], tp["y"])
         sleeve = p * Pos(0, 0, P.Z_PIN_TOP - P.RECEPT_LEN) * extrude(
             Circle(P.RECEPT_BODY_D / 2), amount=P.RECEPT_LEN)
+        r = P.RECEPT_BODY_D / 3.4
         shaft = p * Pos(0, 0, P.Z_PIN_TOP) * extrude(
-            Circle(0.25), amount=P.PIN_PROTRUSION - 0.55)
+            Circle(r), amount=P.PIN_PROTRUSION - 0.55)
         tip = p * Pos(0, 0, P.Z_PIN_TOP + P.PIN_PROTRUSION - 0.55) * extrude(
-            Circle(0.25), amount=0.55, taper=45)
+            Circle(r), amount=0.55, taper=45)
         out = sleeve + shaft + tip if out is None else out + sleeve + shaft + tip
     return out
 
 
+def build_shrink_gauge():
+    """Plain through holes at four diameters, to calibrate hole shrink where
+    the design's larger features live.
+
+    The fit gauge answers one question -- what bore takes this sleeve -- and it
+    answers it at ONE diameter. That was fine until the P100 gauge read 2.00
+    where the P50 gauge read 1.20 on a sleeve only 0.92 mm bigger: shrink is a
+    function of diameter, not a constant, and the Ø4 to Ø12 holes in this
+    design have never been measured at all. Print this, run the caliper's
+    inside jaws down each hole, and shrink at that diameter is the modelled
+    number engraved beside it minus what you read.
+    """
+    gap, margin, wall = 5.0, 5.0, 4.0
+    xs, x = [], margin
+    for d in P.GAUGE_PLAIN_BORES:
+        x += d / 2
+        xs.append(x)
+        x += d / 2 + gap
+    w = x - gap + margin
+    big = max(P.GAUGE_PLAIN_BORES)
+    hy, ly = big / 2 + wall, -6.0
+    h = hy + big / 2 + wall + 12.0
+    part = extrude(rrect((0, w), (ly - 6.0, ly - 6.0 + h), 2.0), amount=5.0)
+    for x, d in zip(xs, P.GAUGE_PLAIN_BORES):
+        part -= Pos(x, hy, -0.1) * extrude(Circle(d / 2), amount=5.2)
+        part -= Pos(x, ly, 5.0) * extrude(
+            Text(f"{d:g}", font_size=4.0, align=(Align.CENTER, Align.CENTER)),
+            amount=-0.6)
+    return part
+
+
 PARTS_TO_BUILD = {
     "base_plate": build_base_plate,
+    "shrink_gauge": build_shrink_gauge,
     "stand": build_stand,
     "nest": build_nest,
     "cover": build_cover,

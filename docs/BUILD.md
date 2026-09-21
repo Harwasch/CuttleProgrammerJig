@@ -97,41 +97,129 @@ and it could be opened into a hole clean through the cover with no complaint.
 
 ## Calibrate the probe bores first
 
-There is no drilling. The probe bores print to final size — but FDM renders a
-small vertical hole undersize by an amount specific to your printer, nozzle,
-material and speed, so you calibrate once:
+The probe bores print to final size — but FDM renders a small vertical hole
+undersize by an amount specific to your printer, nozzle, material and speed, so
+you calibrate once. **Calibrate with the RECEPTACLE**, which is what sits in the
+bore. Reading the gauge with the probe in hand instead is the one mistake that
+has actually been made here, and it cost a base plate: the P50-B1's barrel is
+Ø0.68 and the R50-2S's head is Ø0.98, so the answer came out 0.30 mm small and
+no sleeve would seat.
 
-1. Print `fit_gauge.stl` (80 × 14 × 5 mm, about 10 minutes) in the **same
-   material and profile** you will use for the base plate. It has ten **blind
-   counterbores 2.5 mm deep** labelled 90 to 135, in hundredths of a
-   millimetre.
+1. Print `fit_gauge.stl` (111 × 30 × 12.5 mm, about 35 minutes) in the **same material and profile** you will use for
+   the base plate. Two rows of ten, labelled in hundredths of a millimetre:
 
-   The depth matters: 2.5 mm is one receptacle head, so the coupon reproduces
-   exactly the feature it is calibrating. It used to be an 11 mm through hole
-   for what is a 2.5 mm counterbore — a deeper hole tapers more and reads
-   tighter, biasing the one measurement the whole design hangs on.
-2. Press an R50 sleeve into each. You want the smallest bore whose **head seats
-   flush** with a firm thumb push and does not rattle. The answer must have a
-   bore too tight below it **and** one visibly loose above it — if the sleeve
-   only enters the largest, the range has not bracketed your printer and you
-   need to shift `GAUGE_BORES` up and print again.
-3. Put that number in `PIN_BORE_D` in [`cad/params.py`](../cad/params.py),
-   set `PRINT_HOLE_SHRINK` to `PIN_BORE_D` minus your sleeve's measured head
-   diameter, and run `python3 jig.py`.
+   | row | depth | how to read it | sets |
+   |---|---|---|---|
+   | **HEAD** | one receptacle head | push the sleeve in **head first**; the smallest bore the head goes fully into with a firm thumb push, the step down to the body ending flush with the face | `PIN_BORE_D` |
+   | **BODY** | one body bore | push the sleeve in **tail first**; the smallest bore the body slides down without force | `PIN_BODY_BORE_D` |
 
-   **Both, together.** `PRINT_HOLE_SHRINK` is what every other fit in the
-   design is computed from — the guide posts, the registration pins, the
-   locator shanks, the heat-set insert holes. It used to be a literal buried
-   inside `verify.py`, so recalibrating for a new printer silently left all of
-   them sized for the old one.
+   Two rows because the plate needs two bores and at this size they cannot be
+   derived from one another: shrink changes fast enough down here that the
+   counterbore and the body bore end up barely 0.05 mm apart as modelled, which
+   is less than the uncertainty in either.
 
-The value shipped here, **1.20**, is a measured result, not a default: on the
-machine and profile it was taken from, the sleeve entered the 120 bore and
-nothing smaller. That means the profile renders a small vertical hole about
-0.22 mm under nominal — a modelled Ø1.20 comes out near Ø0.98 and grips the
-sleeve head. That is more shrink than a typical PLA profile gives (0.08 to
-0.14 mm), so treat it as a starting point on any other machine, nozzle,
-material or speed and re-run the gauge.
+   Each row is bored to the depth of the feature it stands for, because a
+   deeper hole tapers more and reads tighter. Every bore has an eject hole
+   through the back — a press fit in a blind hole otherwise stays there.
+
+2. The answer must have a bore too tight below it **and** one visibly loose
+   above it. If the sleeve only enters the largest, the range has not bracketed
+   your printer: shift `GAUGE_BORES` up and print again. The P50 range steps
+   1.30 to 1.75 and the P100 range 1.80 to 2.25.
+
+3. Put the two numbers in `PIN_BORE_D` and `PIN_BODY_BORE_D` in
+   [`cad/params.py`](../cad/params.py), add the point
+   `(PIN_BORE_D, PIN_BORE_D − your head diameter)` to `HOLE_SHRINK_CAL`, and
+   run `python3 jig.py`.
+
+### Getting the receptacles in
+
+They go in tail first, and a 0.86 mm brass tube buckles easily, so do not pinch
+the tube — push on the head with something flat. The bore is a 0.020 mm radial
+slip over 8 mm, which is a firm push, not a fight; if it fights you, the bore
+is undersize and the gauge is telling you so. A cone leads from the counterbore
+into the body bore so the tube cannot catch square on the step.
+
+### If the P50 bores will not come out
+
+At Ø0.98 a printed hole is two and a half nozzle widths across and the printer
+is removing something like 40 % of it. If the gauge will not give you a clean
+answer, the bores are **drillable, and the geometry is already sized for it**:
+Ø1.00 and Ø0.90 are stock drill sizes, and they land exactly where the design
+wants them — a Ø1.00 counterbore on a Ø0.98 head is 0.01 mm of slip, a Ø0.90
+body bore on a Ø0.86 body is the 0.02 mm the design asks for, and a Ø0.98 head
+still cannot enter a Ø0.90 bore, so the depth stop survives. Print the plate,
+run both drills down each bore by hand using the printed hole as the pilot, and
+the fit stops depending on the print model at all.
+
+The P100 family does not have this problem — Ø1.90 and Ø1.71 are comfortable
+for FDM — which is worth knowing if you have both sets of pins.
+
+### Hole shrink is a function of diameter AND depth
+
+The P50 gauge's two rows are the same diameters at different depths, so it
+measured both at once:
+
+| bore | depth | part that just entered | shrink |
+|---|---|---|---|
+| Ø1.35 | 2.5 mm | Ø0.98 R50 **head** (1.30 not quite) | **0.37** |
+| Ø1.35 | 8.0 mm | Ø0.86 R50 **body**, a little play (1.30 not at all) | **0.45** |
+| Ø2.00 | 7.5 mm | Ø1.90 R100 head | **0.10** |
+
+The first two differ only in depth: **5.5 mm deeper costs 0.08 mm of printed
+diameter**. Ignoring that is what buckled a batch of receptacles — the body
+bore was offset from the counterbore on the assumption that both shrank the
+same, which put an *interference* fit 8 mm long on a 0.86 mm brass tube.
+
+Both bores are now solved at their own depth. On the P50 they land on the same
+**Ø1.35 modelled** and print **Ø0.98** and **Ø0.90** — exactly what the two
+gauge rows read. So on this printer **the step that stops the sleeve is
+produced by depth, not by modelled diameter**, and `verify.py` measures it as
+printed rather than assuming it. That is a real dependency: a printer without
+the depth effect would have no step at all, and `PIN_BORE_D` would have to be
+opened up to create one.
+
+An earlier Ø1.20 reading is withdrawn — it was taken with the probe in hand
+rather than the receptacle, and the probe's barrel is Ø0.68 against the
+receptacle's Ø0.98 head, so it answered a different question by 0.30 mm.
+
+The depth term rests on that one pair of rows. **Nothing has been measured at
+Ø4 and up**, which is where the guide posts, the registration pins, the insert
+holes and the magnet fixture's rotor journal live. Those use
+`PRINT_HOLE_SHRINK`, a separate constant at 0.22, deliberately not tied to the
+calibration list — every one of those features has been printed at that figure
+and works, and a 40 % small-hole loss has no business up there. Shrink cannot
+rise again as the hole grows, so the honest bracket is 0 to 0.10 and
+`verify.py` checks across it.
+
+To close that, print **`shrink_gauge`** (56 × 32 × 5 mm, about 15 minutes):
+four plain through holes modelled at Ø4, Ø6, Ø9 and Ø12 with the number
+engraved beside each. Run the caliper's inside jaws down each one; shrink at
+that diameter is the engraved number minus what you read. Add the points to
+`HOLE_SHRINK_CAL` and everything downstream re-derives.
+
+### Root flares
+
+A pin standing on a flat face meets it in a square corner, and that corner is
+where a printed column breaks: the layer bond carries the whole bending moment
+with nothing to spread it into. Every pin that has room now rises out of a
+1.5 mm tapered skirt, sized to the largest its own mating clearance allows as
+printed:
+
+| pin | root | limited by | clearance left |
+|---|---|---|---|
+| guide post | Ø5.08 → Ø5.58 | the spring's Ø5.80 bore sliding over it | 0.11 mm |
+| board locator | Ø2.58 → Ø2.98 | the nest's Ø3.40 pass-through | 0.10 mm |
+| probe collar | Ø3.08 → Ø3.58 | the nest's Ø4.00 probe window | 0.10 mm |
+
+On the locator — the tallest thing on the plate — that is **1.54× the section
+modulus** at the root. The registration pins get none: the nest leaves them
+0.075 mm, and at Ø4.00 × 6.5 mm they are 1.6:1, the stoutest thing standing
+there. Giving them one would mean relieving the nest's underside and
+reprinting it.
+
+**The nest does not change.** All three flares fit inside clearances that
+already existed.
 
 ### The bore is stepped, and that is what sets the probe height
 
@@ -145,15 +233,133 @@ stack-up derives from, and until this was stepped the lead-in printed at Ø1.18
 and the bore at Ø0.98 — both at or over the Ø0.98 head — so the sleeve slid
 straight through and its height was set by feel.
 
-The body bore then guides the 15 mm body over 8 mm at 0.020 mm radial, which is
-what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
-0.194 mm RSS against a 0.500 mm budget; `verify.py` prints every link.
+The sleeve is then held at two places — the counterbore on its head and the
+body bore on its body, 5.25 mm apart at 0.020 mm radial — and it is the
+distance between those two that limits tilt, not either one alone. The whole
+chain totals 0.442 mm worst case and 0.193 mm RSS against a 0.500 mm budget;
+`verify.py` prints every link.
+
+## The P100 variant
+
+The default build is a **P50-B1 probe in an R50-2S receptacle**. Setting
+`JIG_PINS=P100` builds for a **P100-B1 in an R100-4S** instead — a much larger
+pin, and not a drop-in.
+
+```bash
+cd cad
+JIG_PINS=P100 python3 jig.py       # -> cad/out/p100/
+JIG_PINS=P100 python3 verify.py
+python3 tools/compare_families.py  # which parts actually change
+```
+
+**It is not a base plate swap.** Two things force the rest:
+
+The P100 probe stands **8.35 mm** out of its receptacle where the P50 stands
+3.35 — 2.00 mm of tip cone plus 6.35 mm of Ø1.0 plunger rod, the whole of its
+Ø1.36 barrel disappearing into the receptacle's 25.00 mm tube. Since the seat
+height is `NEST_T + COMPRESSION − PIN_PROTRUSION` and nothing else in that
+expression may move, the probe seat goes from **3.85 mm above** the hard-stop
+plateau to **0.75 mm below** it. The plate stops growing a platform and gets a
+relief instead — which is the easy half, and it also means no bottom-side
+component can reach the plateau, so all the platform relief cutting disappears.
+
+The hard half is that the R100 receptacle is **39 mm long** against the R50's
+17.5. Its tail lands at z = −39.75, which is 22 mm past where the ST-Link's
+roof used to be. Nothing in plan can move — the probes are where the board's
+test points are — so the ST-Link moves out from under them into −Y and the box
+grows by just enough to take it. That leaves a clear 39 mm-wide channel along
++Y with the full depth of the stand under it, which is where the tails and the
+loom live.
+
+| | P50 | P100 |
+|---|---|---|
+| probe stands proud of the receptacle | 3.35 mm | 8.35 mm |
+| probe seat | 3.85 mm **above** the stop | 0.75 mm **below** it |
+| working stroke | 1.20 of 2.65 mm | 1.60 of 3.50 mm |
+| clamp load, closed | 10.0 N | 15.0 N |
+| counterbore | Ø0.98 × 2.5 mm | Ø1.90 × 7.5 mm |
+| body bore, as modelled | Ø1.35 | Ø1.85 |
+| body bore, as printed | Ø0.90 × 8.0 mm | Ø1.71 × 5.0 mm |
+| counterbore, as modelled | Ø1.35 | Ø2.00 |
+| hole shrink, counterbore / body bore | 0.37 / 0.45 mm | 0.10 / 0.13 mm |
+| fit gauge range | 1.30–1.75 | 1.80–2.25 |
+| base plate | 8 mm thick | 14 mm thick |
+| outline | 145 × 91 mm | 145 × 101 mm |
+| lid screws | M3 × 12 | M3 × 16 |
+| tail proud of the plate | 5.65 mm | 25.75 mm |
+
+The body bore lands at **Ø1.71 as printed**, against the vendor's own stated
+drilling size of 1.70 mm for this receptacle — the same 0.04 mm of diametral
+clearance the P50 bore uses, landing within 0.01 mm of what the vendor
+recommends for a drilled plate. (An earlier draft of this page called that an
+independent check on the print model. It is not: `body + 0.04` is a design
+rule and the algebra cancels the shrink out entirely, so it says nothing about
+whether the print model transfers. The agreement with the vendor is still
+worth having; it is just evidence about the clearance rule, not the printer.)
+
+**`nest` and `cover` are unchanged** — identical volume, bounding box and
+topology in both families, which `tools/compare_families.py` checks rather than
+asserts. Print a new `base_plate`, `stand` and `fit_gauge`; keep the rest.
+
+The P100's thinnest collar is **0.826 mm**, between VDD_3V3 and SWDIO 4.27 mm
+apart — more than the P50's 0.35 mm, because with the seat recessed there is no
+island to be cut back and the wall is shared with the neighbouring bore instead.
+
+**Calibrate first, as always**, on the P100 gauge: it steps 1.95 to 2.40 and you
+are looking for the bore an R100 head just enters.
+
+### What to measure before printing a P100 plate
+
+The receptacle's head bottoms on a shoulder at a **fixed** depth, so the probe
+tip ends up at
+
+```
+(seat − RECEPT_HEAD_L) + head_as_measured + protrusion_as_measured
+```
+
+which means an error in **either** `RECEPT_HEAD_L` or `PIN_PROTRUSION` lands on
+the working stroke one for one. Those two are the pair the whole stack-up rests
+on, and both are read off the vendor drawing rather than measured. Their
+combined error has to stay inside **−0.80 / +0.85 mm**, which is the 1.60 mm
+working stroke moving between the 0.80 mm minimum and 70 % of the 3.50 mm full
+travel.
+
+| Measure | Model | How | Window |
+|---|---|---|---|
+| **`PIN_PROTRUSION`** | 8.35 | Seat a probe in a receptacle, measure the assembly's overall length, subtract the bare receptacle's. That difference is how far the tip stands proud. | see above |
+| **`RECEPT_HEAD_L`** | 7.5 | Length of the enlarged section at the top, from the top face down to where the OD drops to the plain Ø1.67 body. This is the counterbore depth. | see above |
+| `RECEPT_HEAD_D` | 1.90 | OD of that top section | 1.84–1.92 |
+| `RECEPT_BODY_D` | 1.67 | OD of the plain tube | 1.55–1.69 |
+| `PIN_STROKE_MAX` | 3.50 | Probe free length minus its length pressed fully home | ≥ 2.29 |
+| `RECEPT_LEN` | 39.0 | Overall | 16.25–47.25 |
+
+`PIN_BORE_D` is already done: the gauge read **2.00**.
+
+The fit gauge reads `RECEPT_HEAD_L` for you as a by-product: its bores are
+blind and exactly `RECEPT_HEAD_L` deep, so push a receptacle in **head first**
+and the step where it drops to the body diameter should come out flush with the
+coupon's face. Proud or sunk by *x* means your head is longer or shorter by *x*.
+
+Then hand the numbers to the checker, which reports each against its window,
+combines the two that matter, and tells you whether it is a model correction or
+a reprint:
+
+```bash
+JIG_PINS=P100 python3 tools/check_pins.py \
+    --protrusion 8.4 --head 7.6 --head-dia 1.91 --body-dia 1.68
+```
+
+`STLINK_CASE` and the four `CLAMP_*` numbers are unchanged from the P50 build,
+but the P100 plate is a new print with new insert positions — so if you never
+verified `CLAMP_SPINDLE_TO_ROW` (24.6 mm, spindle axis to the nearer mounting
+row, inferred from the drawing), do it now, because fixed inserts give up the
+fore-and-aft trim the clamp's own slots allowed.
 
 ## Assembly
 
 1. Calibrate `PIN_BORE_D` with the gauge, measure your ST-LINK/V2 into
    `STLINK_CASE`, and only then print the parts.
-2. Press an **R50-2S sleeve** into each bore from the top, tail first, until
+2. Press an **R50-2S sleeve** (P100: **R100-4S**) into each bore from the top, tail first, until
    its head bottoms in the counterbore — its top will then be flush with the
    platform. The tail projects 5.7 mm below the deck into the wire bay. The
    counterbore locates and grips it; it does not necessarily retain it against
@@ -178,7 +384,7 @@ what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
    USB cable out through the hole in the +X wall, and plug the probe loom onto
    its 20-pin header (table below). Bring the 3.3 V feed in through the slot on
    the far side from the clamp and zip-tie it.
-6. Lower the plate onto the stand and fit the four **M3 × 12** into the corner
+6. Lower the plate onto the stand and fit the four **M3 × 12** (P100: **M3 × 16**, for the thicker plate) into the corner
    inserts. Heads sit in Ø6.4 × 3 mm counterbores, flush below the plateau.
 
    These are inserts rather than screws cut straight into the plastic because
@@ -186,7 +392,7 @@ what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
    M3 self-tapped into PETG does not survive many cycles. The clamp load is
    internal anyway — the spindle presses the cover down, the springs push the
    plate down by the same amount — so the screws only stop the lid shifting.
-7. Push a **P50-B1 probe** into each sleeve until it seats. Tips should now
+7. Push a **P50-B1 probe** (P100: **P100-B1**) into each sleeve until it seats. Tips should now
    stand 3.35 mm proud of the platform.
 
    This has to happen **before** the nest goes on: once it does, each sleeve
@@ -201,7 +407,7 @@ what limits sleeve tilt. The whole chain totals 0.446 mm worst case and
    MH4 at Ø2.10 locate it; there are no secondary pins.
 
    The pins are on the base plate rather than the nest so the board registers directly
-   to the part that holds the probes: worst case 0.444 mm rather than 0.676 mm,
+   to the part that holds the probes: worst case 0.442 mm rather than 0.674 mm,
    against 0.5 mm of usable pad. They are stepped — Ø3.00 up to the seat, then
    Ø2.10 — so only 6 mm stands proud, at 2.9:1 rather than 5.7:1.
 
@@ -288,7 +494,7 @@ computed from the second one.
 calibrates the counterbore but says nothing about whether the bore beneath it
 comes out tapered. If a sleeve seats cleanly in the gauge but will not bottom
 in the plate, that is the cause — shorten `PIN_BORE_L` to 6 mm and reprint the
-plate; the cost is 0.006 mm of extra probe tilt against a 0.500 mm budget.
+plate; the cost is 0.003 mm of extra probe tilt against a 0.500 mm budget.
 
 **Two probe collars are thin by necessity.** SWDIO and SWCLK sit 0.95 and
 1.05 mm from the inflated footprint of the tallest bottom-side component, so

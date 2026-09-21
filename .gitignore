@@ -34,6 +34,7 @@ fp-info-cache
 cad/ref/
 
 # Regenerable: the assembly STEP embeds the whole board keep-out solid.
+cad/out/**/assembly_closed.step
 cad/out/assembly_closed.step
 
 # Meshed board, for renders only: 5 MB, regenerable, and it is the private
@@ -41,6 +42,7 @@ cad/out/assembly_closed.step
 cad/out/pcba.stl
 
 # Render aid only: probe hardware, not a printed part.
+cad/out/**/probes_hw.st*
 cad/out/probes_hw.st*
 
 # render aid, copied from cad/out; not a printed part

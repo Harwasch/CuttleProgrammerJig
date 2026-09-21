@@ -18,6 +18,8 @@ import params as P
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "out")
+if P.PIN_FAMILY != "P50":
+    OUT = os.path.join(OUT, P.PIN_FAMILY.lower())
 SS = 2                      # supersampling factor
 LIGHT = np.array([0.45, -0.75, 0.62])
 
@@ -183,6 +185,13 @@ OPEN_PCB = JIG + [("nest", P.TRAVEL), ("pcba", P.TRAVEL),
 EXPLODE = [("stand", -26), ("base_plate", 0), ("probes_hw", 0),
            ("nest", 16), ("pcba", 30), ("cover", COVER_Z + 42)]
 
+_TAIL_Z = P.Z_PIN_TOP - P.RECEPT_LEN
+_PROUD = P.PLATE_Z_BOTTOM - _TAIL_Z
+_R = "R50" if P.PIN_FAMILY == "P50" else "R100"
+_SEAT = (f"a platform {P.Z_PIN_TOP:.2f} mm above the hard stop"
+         if P.Z_PIN_TOP > 0 else
+         f"a recess {-P.Z_PIN_TOP:.2f} mm below the hard stop")
+
 VIEWS = {
     "iso_front_right": (CLOSED_PCB, 35, 24, "assembly, board loaded - front right"),
     "iso_front_left":  (CLOSED_PCB, -35, 24, "assembly, board loaded - front left"),
@@ -198,9 +207,13 @@ VIEWS = {
                         "underside - sleeve tails in the open wiring space, "
                         "loom exit with its tie post"),
     "wiring":          ([("base_plate", 0), ("probes_hw", 0)], -120, -40,
-                        "solder side - seven R50 sleeve tails, 5.7 mm proud, "
-                        "tightest pair 4.3 mm apart",
-                        (-24.7, -1.5, -11.0, 16.0)),
+                        f"solder side - seven {_R} tails, {_PROUD:.1f} mm proud, "
+                        f"tightest pair 4.3 mm apart",
+                        (-24.7, -1.5, (P.PLATE_Z_BOTTOM + _TAIL_Z) / 2,
+                         max(16.0, (P.PLATE_Z_BOTTOM - _TAIL_Z) * 0.8))),
+    "seat":            ([("base_plate", 0), ("probes_hw", 0)], 30, 26,
+                        f"probe seat - {_SEAT}",
+                        (-24.7, -1.5, P.Z_PIN_TOP, 14.0)),
     "stand":           ([("stand", 0)], 34, 30,
                         "stand - a plain open box; the whole interior is the ST-Link's"),
     "stand_top":       ([("stand", 0)], 20, 62,
